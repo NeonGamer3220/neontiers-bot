@@ -4,7 +4,7 @@ from discord import app_commands
 import random
 
 from database import supabase_select, get_discord_by_minecraft_async
-from config import get_gamemode_display_name
+from config import get_gamemode_display_name, normalize_gamemode
 
 class SpinCog(commands.Cog):
     def __init__(self, bot):
@@ -19,54 +19,50 @@ class SpinCog(commands.Cog):
         await interaction.response.defer()
         
         mode_display = get_gamemode_display_name(gamemode)
-        
-        # Lekérjük az összes játékost a megadott játékmódból
-        all_players = await supabase_select("tests", {"gamemode": mode_display})
-        
         target_tier = tier.strip().upper()
-        if target_tier == "UNRANKED" or target_tier == "500":
+        
+        if target_tier in ["UNRANKED", "500"]:
             target_tier = "UNRANKED"
 
-        # Rászűrünk pontosan a megadott Tier-re
+        # OPTIMALIZÁLT LEKÉRDEZÉS: Csak az adott játékmód adataira szűrünk
+        mode_players = await supabase_select("tests", {"gamemode": mode_display})
+        
         valid_targets = []
-        for p in all_players:
+        for p in mode_players:
             rank = str(p.get("rank", "Unranked")).strip().upper()
-            if rank == "500": 
+            if rank == "500":
                 rank = "UNRANKED"
                 
             if rank == target_tier:
                 valid_targets.append(p)
-        
+                
         if not valid_targets:
-            return await interaction.followup.send(f"❌ Nincs sorsolható játékos ebben a módban (`{mode_display}`) ezen a szinten (`{tier}`).")
+            await interaction.followup.send(f"❌ Nem található egyetlen játékos sem ebben a játékmódban (`{mode_display}`) ezen a szinten (`{tier}`).")
+            return
 
         winner = random.choice(valid_targets)
         winner_mc = winner.get("username", "Ismeretlen")
         winner_rank = str(winner.get("rank", "Unranked"))
-        if winner_rank == "500": 
-            winner_rank = "Unranked"
-            
-        # Formázzuk szép kisbetű-nagybetűsre, ha Unranked
-        if winner_rank.upper() == "UNRANKED":
+        
+        if winner_rank in ["500", "UNRANKED", "unranked"]:
             winner_rank = "Unranked"
         else:
             winner_rank = winner_rank.upper()
             
-        # Visszakeressük a Discord fiókját a Minecraft neve alapján
         discord_id = await get_discord_by_minecraft_async(winner_mc)
         discord_mention = f"<@{discord_id}>" if discord_id else "*Nincs linkelve a szerveren*"
         
-        embed = discord.Embed(title="**Pörgetés eredménye**", description="A sorsolás eredménye:", color=discord.Color.orange())
-        
-        # Minecraft fej betöltése
+        embed = discord.Embed(
+            title="🎯 **Pörgetés eredménye**", 
+            description="A sorsolás nyertese:", 
+            color=discord.Color.orange()
+        )
         embed.set_thumbnail(url=f"https://minotar.net/helm/{winner_mc}/256.png")
-        
         embed.add_field(name="Discord", value=discord_mention, inline=False)
         embed.add_field(name="Minecraft név", value=f"`{winner_mc}`", inline=False)
         embed.add_field(name="Játékmód", value=mode_display, inline=True)
-        embed.add_field(name="Tier", value=winner_rank, inline=True)
-        embed.set_footer(text=f"Kérte: {interaction.user.display_name}")
-
+        embed.add_field(name="Jelenlegi Tier", value=f"**{winner_rank}**", inline=True)
+        
         await interaction.followup.send(embed=embed)
 
 async def setup(bot):
