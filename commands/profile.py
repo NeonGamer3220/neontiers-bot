@@ -4,7 +4,13 @@ from discord import app_commands
 import traceback
 
 from database import get_linked_minecraft_name_async, supabase_select
-from config import TICKET_TYPES, LEGACY_TICKET_TYPES, GAMEMODE_INDICATORS, normalize_gamemode
+# Biztonságos importálás: ha GAMEMODE_INDICATORS nincs, a MODE_INDICATORS-t használja
+try:
+    from config import GAMEMODE_INDICATORS
+except ImportError:
+    from config import MODE_INDICATORS as GAMEMODE_INDICATORS
+
+from config import TICKET_TYPES, LEGACY_TICKET_TYPES, normalize_gamemode
 
 
 def get_correct_emoji(key: str, label: str, emoji_raw: any) -> str:
@@ -14,7 +20,7 @@ def get_correct_emoji(key: str, label: str, emoji_raw: any) -> str:
     """
     norm_key = normalize_gamemode(key)
     
-    # 1. Kikeressük a config.py GAMEMODE_INDICATORS szótárából
+    # 1. Kikeressük a config.py szótárából (ahol a kész <:nev:id> van)
     if norm_key in GAMEMODE_INDICATORS:
         indic = str(GAMEMODE_INDICATORS[norm_key]).strip()
         if indic.startswith("<:") or indic.startswith("<a:"):
@@ -25,7 +31,7 @@ def get_correct_emoji(key: str, label: str, emoji_raw: any) -> str:
     if raw_str.startswith("<:") or raw_str.startswith("<a:"):
         return raw_str
 
-    # 3. Ha az ID számként van megadva, kényszerítjük a kisbetűs nevet
+    # 3. Ha az ID számként van megadva
     if raw_str.isdigit():
         clean_name = norm_key.replace(" ", "").replace("-", "").lower()
         return f"<:{clean_name}:{raw_str}>"
@@ -78,11 +84,8 @@ class ProfileCog(commands.Cog):
 
             for label, key, emoji_raw in TICKET_TYPES:
                 norm_key = normalize_gamemode(key)
-                
-                # Tier lekérése a játékos adataiból
                 tier = user_tiers.get(label.lower(), user_tiers.get(norm_key, "Unranked"))
                 
-                # Formázott Emoji lekérése
                 emoji_str = get_correct_emoji(key, label, emoji_raw)
                 embed_modern.add_field(name=f"{emoji_str} {label}", value=f"**{tier}**", inline=True)
 
@@ -99,7 +102,6 @@ class ProfileCog(commands.Cog):
             
             for label, key, emoji_raw in LEGACY_TICKET_TYPES:
                 norm_key = normalize_gamemode(key)
-                
                 tier = user_tiers.get(label.lower(), user_tiers.get(norm_key, "Unranked"))
                 
                 emoji_str = get_correct_emoji(key, label, emoji_raw)
