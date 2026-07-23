@@ -4,35 +4,33 @@ from discord import app_commands
 import traceback
 
 from database import get_linked_minecraft_name_async, supabase_select
-from config import TICKET_TYPES, LEGACY_TICKET_TYPES, MODE_INDICATORS, normalize_gamemode
+from config import TICKET_TYPES, LEGACY_TICKET_TYPES, GAMEMODE_INDICATORS, normalize_gamemode
 
 
 def get_correct_emoji(key: str, label: str, emoji_raw: any) -> str:
     """
-    Kikeresi a garantáltan működő Discord emojit.
-    1. Próbálja a config.py MODE_INDICATORS szótárából.
-    2. Ha csak szám ID van, kisbetűs névvel formázza meg (<:nev:id>).
+    Kikeresi a helyes Discord emojit.
+    Először a config.py GAMEMODE_INDICATORS szótárát próbálja ki.
     """
     norm_key = normalize_gamemode(key)
     
-    # 1. Ha a MODE_INDICATORS-ban megvan a kész Discord emoji tag
-    if norm_key in MODE_INDICATORS:
-        indic = str(MODE_INDICATORS[norm_key]).strip()
+    # 1. Kikeressük a config.py GAMEMODE_INDICATORS szótárából
+    if norm_key in GAMEMODE_INDICATORS:
+        indic = str(GAMEMODE_INDICATORS[norm_key]).strip()
         if indic.startswith("<:") or indic.startswith("<a:"):
             return indic
 
-    # 2. Ha az emoji_raw már formázott tag
+    # 2. Ha a tuple-ben megadott raw emoji már jó formátumban van
     raw_str = str(emoji_raw).strip()
     if raw_str.startswith("<:") or raw_str.startswith("<a:"):
         return raw_str
 
-    # 3. Ha az emoji_raw egy szám ID (pl. 1489190924771381289)
+    # 3. Ha az ID számként van megadva, kényszerítjük a kisbetűs nevet
     if raw_str.isdigit():
-        # A Discord emoji nevének KISBETŰSNEK kell lennie!
         clean_name = norm_key.replace(" ", "").replace("-", "").lower()
         return f"<:{clean_name}:{raw_str}>"
 
-    # 4. Ha semmi nem jött össze, biztonsági ikon
+    # 4. Biztonsági tartalék
     return "⚔️"
 
 
@@ -81,7 +79,7 @@ class ProfileCog(commands.Cog):
             for label, key, emoji_raw in TICKET_TYPES:
                 norm_key = normalize_gamemode(key)
                 
-                # Tier keresése
+                # Tier lekérése a játékos adataiból
                 tier = user_tiers.get(label.lower(), user_tiers.get(norm_key, "Unranked"))
                 
                 # Formázott Emoji lekérése
