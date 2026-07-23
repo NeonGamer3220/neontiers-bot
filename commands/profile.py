@@ -9,28 +9,30 @@ from config import TICKET_TYPES, LEGACY_TICKET_TYPES, MODE_INDICATORS, normalize
 
 def get_correct_emoji(key: str, label: str, emoji_raw: any) -> str:
     """
-    Visszaadja a pontos Discord emojit.
-    Először a config.py MODE_INDICATORS szótárát próbálja ki.
+    Kikeresi a garantáltan működő Discord emojit.
+    1. Próbálja a config.py MODE_INDICATORS szótárából.
+    2. Ha csak szám ID van, kisbetűs névvel formázza meg (<:nev:id>).
     """
     norm_key = normalize_gamemode(key)
     
-    # 1. Próbáljuk a MODE_INDICATORS-ból kikeresni (ott már a teljes <:nev:id> formátum van)
+    # 1. Ha a MODE_INDICATORS-ban megvan a kész Discord emoji tag
     if norm_key in MODE_INDICATORS:
         indic = str(MODE_INDICATORS[norm_key]).strip()
         if indic.startswith("<:") or indic.startswith("<a:"):
             return indic
 
-    # 2. Ha ott nem találtuk meg, de a tuple-ben egy számszerű ID van (pl. 1489190924771381289)
+    # 2. Ha az emoji_raw már formázott tag
     raw_str = str(emoji_raw).strip()
-    if raw_str.isdigit():
-        # A Discord emoji neveit KISBETŰVEL formázzuk!
-        clean_name = norm_key.replace(" ", "").replace("-", "").lower()
-        return f"<:{clean_name}:{raw_str}>"
-        
     if raw_str.startswith("<:") or raw_str.startswith("<a:"):
         return raw_str
 
-    # 3. Alapértelmezett, ha semmit sem talál
+    # 3. Ha az emoji_raw egy szám ID (pl. 1489190924771381289)
+    if raw_str.isdigit():
+        # A Discord emoji nevének KISBETŰSNEK kell lennie!
+        clean_name = norm_key.replace(" ", "").replace("-", "").lower()
+        return f"<:{clean_name}:{raw_str}>"
+
+    # 4. Ha semmi nem jött össze, biztonsági ikon
     return "⚔️"
 
 
@@ -54,7 +56,7 @@ class ProfileCog(commands.Cog):
                     await interaction.followup.send("❌ Még nem linkelted a Minecraft fiókodat! Használd a `/link` parancsot.")
                 return
 
-            # Lekérjük a játékos tesztjeit a Supabase-ből
+            # Lekérjük a teszt adatokat a Supabase-ből
             user_tests = await supabase_select("tests", {"username": mc_name})
             user_tiers = {}
             
@@ -67,7 +69,7 @@ class ProfileCog(commands.Cog):
                     user_tiers[gmode] = rnk
 
             # ===============================
-            # MODERN JÁTÉKMÓDOK EMBED
+            # ELSŐ EMBED: MODERN MÓDOK
             # ===============================
             embed_modern = discord.Embed(
                 title=f"⚔️ {mc_name} Tier Profilja",
@@ -78,9 +80,11 @@ class ProfileCog(commands.Cog):
 
             for label, key, emoji_raw in TICKET_TYPES:
                 norm_key = normalize_gamemode(key)
-                # Kikeressük a tier-t a játékos adataiból
+                
+                # Tier keresése
                 tier = user_tiers.get(label.lower(), user_tiers.get(norm_key, "Unranked"))
                 
+                # Formázott Emoji lekérése
                 emoji_str = get_correct_emoji(key, label, emoji_raw)
                 embed_modern.add_field(name=f"{emoji_str} {label}", value=f"**{tier}**", inline=True)
 
@@ -90,13 +94,14 @@ class ProfileCog(commands.Cog):
                     embed_modern.add_field(name="\u200b", value="\u200b", inline=True)
 
             # ===============================
-            # LEGACY JÁTÉKMÓDOK EMBED
+            # MÁSODIK EMBED: LEGACY MÓDOK
             # ===============================
             embed_legacy = discord.Embed(color=discord.Color.gold())
             embed_legacy.add_field(name="───────────────", value="**🏛️ LEGACY MÓDOK**", inline=False)
             
             for label, key, emoji_raw in LEGACY_TICKET_TYPES:
                 norm_key = normalize_gamemode(key)
+                
                 tier = user_tiers.get(label.lower(), user_tiers.get(norm_key, "Unranked"))
                 
                 emoji_str = get_correct_emoji(key, label, emoji_raw)
