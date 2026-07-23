@@ -4,9 +4,9 @@ from discord import app_commands
 import json
 import os
 import time
+import asyncio
 
 from config import STAFF_ROLE_ID, HELP_TICKET_CATEGORY_ID
-from commands.staff import is_staff_member
 
 HT_TICKETS_FILE = "ht_tickets.json"
 PANEL_COLOR = 0xB026FF
