@@ -26,7 +26,6 @@ class ProfileCog(commands.Cog):
                     await interaction.followup.send("❌ Még nem linkelted a Minecraft fiókodat! Használd a `/link` parancsot.")
                 return
 
-            # OPTIMALIZÁLT LEKÉRDEZÉS: Csak az adott játékos rekordjait kérjük le!
             user_tests = await supabase_select("tests", {"username": mc_name})
             user_tiers = {}
             
@@ -38,8 +37,7 @@ class ProfileCog(commands.Cog):
                         rnk = "Unranked"
                     user_tiers[gmode] = rnk
 
-            # ================================\n            # ELSŐ EMBED: MODERN JÁTÉKMÓDOK
-            # ================================\n            embed_modern = discord.Embed(
+            embed_modern = discord.Embed(
                 title=f"⚔️ {mc_name} Tier Profilja",
                 color=discord.Color.blue()
             )
@@ -60,8 +58,7 @@ class ProfileCog(commands.Cog):
                 for _ in range(3 - mod_rem):
                     embed_modern.add_field(name="\u200b", value="\u200b", inline=True)
 
-            # ================================\n            # MÁSODIK EMBED: LEGACY JÁTÉKMÓDOK
-            # ================================\n            embed_legacy = discord.Embed(color=discord.Color.gold())
+            embed_legacy = discord.Embed(color=discord.Color.gold())
             embed_legacy.add_field(name="───────────────", value="**🏛️ LEGACY MÓDOK**", inline=False)
             
             for label, key, emoji_raw in LEGACY_TICKET_TYPES:
