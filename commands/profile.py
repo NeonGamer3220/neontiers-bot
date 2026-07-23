@@ -7,30 +7,30 @@ from database import get_linked_minecraft_name_async, supabase_select
 from config import TICKET_TYPES, LEGACY_TICKET_TYPES, MODE_INDICATORS, normalize_gamemode
 
 
-def format_emoji(key: str, label: str, raw_emoji_from_tuple: any) -> str:
+def get_correct_emoji(key: str, label: str, emoji_raw: any) -> str:
     """
-    Meghatározza a pontos Discord emoji formátumot.
-     Elsőbbséget élvez a config.py-ban lévő MODE_INDICATORS.
+    Visszaadja a pontos Discord emojit.
+    Először a config.py MODE_INDICATORS szótárát próbálja ki.
     """
     norm_key = normalize_gamemode(key)
     
-    # 1. Próbáljuk meg kikeresni a MODE_INDICATORS-ból (ott már teljes <:nev:id> van)
+    # 1. Próbáljuk a MODE_INDICATORS-ból kikeresni (ott már a teljes <:nev:id> formátum van)
     if norm_key in MODE_INDICATORS:
         indic = str(MODE_INDICATORS[norm_key]).strip()
         if indic.startswith("<:") or indic.startswith("<a:"):
             return indic
 
-    # 2. Ha a TICKET_TYPES tuple-ből kapott raw_emoji már formázott
-    raw_str = str(raw_emoji_from_tuple).strip()
+    # 2. Ha ott nem találtuk meg, de a tuple-ben egy számszerű ID van (pl. 1489190924771381289)
+    raw_str = str(emoji_raw).strip()
+    if raw_str.isdigit():
+        # A Discord emoji neveit KISBETŰVEL formázzuk!
+        clean_name = norm_key.replace(" ", "").replace("-", "").lower()
+        return f"<:{clean_name}:{raw_str}>"
+        
     if raw_str.startswith("<:") or raw_str.startswith("<a:"):
         return raw_str
 
-    # 3. Ha csak egy ID számot kaptunk (pl. 1489190924771381289)
-    if raw_str.isdigit():
-        clean_name = norm_key.replace(" ", "").replace("-", "").lower()
-        return f"<:{clean_name}:{raw_str}>"
-
-    # 4. Alapértelmezett fallback ikon, ha semmi sem talált
+    # 3. Alapértelmezett, ha semmit sem talál
     return "⚔️"
 
 
@@ -54,7 +54,7 @@ class ProfileCog(commands.Cog):
                     await interaction.followup.send("❌ Még nem linkelted a Minecraft fiókodat! Használd a `/link` parancsot.")
                 return
 
-            # Lekérjük a játékos tesztjeit
+            # Lekérjük a játékos tesztjeit a Supabase-ből
             user_tests = await supabase_select("tests", {"username": mc_name})
             user_tiers = {}
             
@@ -67,7 +67,7 @@ class ProfileCog(commands.Cog):
                     user_tiers[gmode] = rnk
 
             # ===============================
-            # MODERN MÓDOK
+            # MODERN JÁTÉKMÓDOK EMBED
             # ===============================
             embed_modern = discord.Embed(
                 title=f"⚔️ {mc_name} Tier Profilja",
@@ -78,9 +78,10 @@ class ProfileCog(commands.Cog):
 
             for label, key, emoji_raw in TICKET_TYPES:
                 norm_key = normalize_gamemode(key)
+                # Kikeressük a tier-t a játékos adataiból
                 tier = user_tiers.get(label.lower(), user_tiers.get(norm_key, "Unranked"))
                 
-                emoji_str = format_emoji(key, label, emoji_raw)
+                emoji_str = get_correct_emoji(key, label, emoji_raw)
                 embed_modern.add_field(name=f"{emoji_str} {label}", value=f"**{tier}**", inline=True)
 
             mod_rem = len(TICKET_TYPES) % 3
@@ -89,7 +90,7 @@ class ProfileCog(commands.Cog):
                     embed_modern.add_field(name="\u200b", value="\u200b", inline=True)
 
             # ===============================
-            # LEGACY MÓDOK
+            # LEGACY JÁTÉKMÓDOK EMBED
             # ===============================
             embed_legacy = discord.Embed(color=discord.Color.gold())
             embed_legacy.add_field(name="───────────────", value="**🏛️ LEGACY MÓDOK**", inline=False)
@@ -98,7 +99,7 @@ class ProfileCog(commands.Cog):
                 norm_key = normalize_gamemode(key)
                 tier = user_tiers.get(label.lower(), user_tiers.get(norm_key, "Unranked"))
                 
-                emoji_str = format_emoji(key, label, emoji_raw)
+                emoji_str = get_correct_emoji(key, label, emoji_raw)
                 embed_legacy.add_field(name=f"{emoji_str} {label}", value=f"**{tier}**", inline=True)
 
             leg_rem = len(LEGACY_TICKET_TYPES) % 3
