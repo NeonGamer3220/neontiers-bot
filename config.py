@@ -8,157 +8,172 @@ load_dotenv()
 # ==========================================
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN") or os.getenv("BOT_TOKEN") or os.getenv("TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
-
-# Role ID-k
 STAFF_ROLE_ID = int(os.getenv("STAFF_ROLE_ID", "0"))
-REGULATOR_ROLE_ID = int(os.getenv("REGULATOR_ROLE_ID", "1483822408182796418"))
-TESTER_ROLE_ID = int(os.getenv("TESTER_ROLE_ID", "1469755118634270864"))
-BANNED_ROLE_ID = int(os.getenv("BANNED_ROLE_ID", "1469740655520780631"))
-EXTRA_STAFF_ROLE_IDS = [int(x.strip()) for x in os.getenv("EXTRA_STAFF_ROLE_IDS", "").split(",") if x.strip()]
+TICKET_CATEGORY_ID = int(os.getenv("TICKET_CATEGORY_ID", "0"))
+EXTRA_STAFF_ROLE_IDS = [int(os.getenv("EXTRA_STAFF_ROLE_IDS", "0"))] if os.getenv("EXTRA_STAFF_ROLE_IDS") else []
 ALLOWED_USER_IDS = [int(x.strip()) for x in os.getenv("ALLOWED_USER_IDS", "").split(",") if x.strip()]
 
 DEBUG_ALLOWED_USERS = []
-DEBUG_ALLOWED_ROLES = [REGULATOR_ROLE_ID]
+DEBUG_ALLOWED_ROLES = [1483822408182796418]
+REGULATOR_ROLE_ID = 1483822408182796418
+TESTER_ROLE_ID = 1469755118634270864
 
-# Channel & Category ID-k
 WELCOME_CHANNEL_ID = int(os.getenv("WELCOME_CHANNEL_ID", "1496272517759897751"))
-HIGH_TEST_CHANNEL_ID = int(os.getenv("HIGH_TEST_CHANNEL_ID", "1490230276632924161"))
-TIER_RESULTS_CHANNEL_ID = int(os.getenv("TIER_RESULTS_CHANNEL_ID", "1490230276632924161"))
-BAN_CHANNEL_ID = int(os.getenv("BAN_CHANNEL_ID", "1469803060976160822"))
-TGF_LOG_CHANNEL_ID = int(os.getenv("TGF_LOG_CHANNEL_ID", "1505522005028503582"))
-
-TICKET_CATEGORY_ID = int(os.getenv("TICKET_CATEGORY_ID", "0"))
-ELO_TICKET_CATEGORY_ID = int(os.getenv("ELO_TICKET_CATEGORY_ID", "0"))
-LEGACY_TICKET_CATEGORY_ID = int(os.getenv("LEGACY_TICKET_CATEGORY_ID", "0"))
-HELP_TICKET_CATEGORY_ID = int(os.getenv("HELP_TICKET_CATEGORY_ID", "0"))
-
-TGF_COOLDOWN_DAYS = 30
+HIGH_TEST_CHANNEL_ID = int(os.getenv("HIGH_TEST_CHANNEL_ID", "0"))
+ELO_CHANNEL_ID = int(os.getenv("ELO_CHANNEL_ID", "1511015484403749004"))
+ELO_TICKET_CATEGORY_ID = int(os.getenv("ELO_TICKET_CATEGORY_ID", "1469766438238687496"))
+LEGACY_TICKET_CATEGORY_ID = int(os.getenv("LEGACY_TICKET_CATEGORY_ID", "1520523939225276536"))
+HELP_TICKET_CATEGORY_ID = int(os.getenv("HELP_TICKET_CATEGORY_ID", "1524391860687339733"))
+BANNED_ROLE_ID = int(os.getenv("BANNED_ROLE_ID", "1496877749388972143"))
+TIER_RESULTS_CHANNEL_ID = int(os.getenv("TIER_RESULTS_CHANNEL_ID", "0"))
 
 # ==========================================
-# ADATBÁZIS ÉS WEBOLDAL BEÁLLÍTÁSOK
+# RENDSZER ÉS WEBOLDAL BEÁLLÍTÁSOK
 # ==========================================
-WEBSITE_URL = os.getenv("WEBSITE_URL", "https://neontiers.hu").rstrip('/')
-BOT_API_KEY = os.getenv("BOT_API_KEY", "")
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip('/')
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-USE_SUPABASE_API = os.getenv("USE_SUPABASE_API", "true").lower() == "true"
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+USE_SUPABASE_API = True
+SUPABASE_URL = os.getenv("SUPABASE_URL", "IDE_IRD_BE_A_SUPABASE_URL-T")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpmY2d2cmJvZnlkY21jdHRjeWV2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDgyMTI3NSwiZXhwIjoyMDg2Mzk3Mjc1fQ.aipbmUjHjC92drOqhO3cy60-LC0RDPOpbvtHrk26tEA")
 SUPABASE_PG_URL = os.getenv("SUPABASE_PG_URL", "")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
+WEBSITE_URL = os.getenv("WEBSITE_URL", "").rstrip("/")
+BOT_API_KEY = os.getenv("BOT_API_KEY", "")
+MINECRAFT_API_URL = os.getenv("MINECRAFT_API_URL", "http://localhost:8080").rstrip("/")
+
+HTTP_TIMEOUT_SECONDS = 10
+COOLDOWN_SECONDS = 14 * 24 * 60 * 60
 DATA_FILE = "data.json"
-HTTP_TIMEOUT_SECONDS = 15
+TESTS_TABLE = "tests"
+
+# Linkelés beállítások
 LINK_CODE_LENGTH = 8
 LINK_CODE_EXPIRY_MINUTES = 10
 
 # ==========================================
-# JÁTÉKMÓDOK ÉS ELO BEÁLLÍTÁSOK
+# ELO RENDSZER BEÁLLÍTÁSOK
 # ==========================================
-MODE_LIST = [
-    "vanilla", "uhc", "pot", "nethpot", "smp", "sword",
-    "axe", "mace", "cart", "creeper", "diasmp", "spearelytra"
-]
-
-RANKS = ["HT1", "LT1", "HT2", "LT2", "HT3", "LT3", "HT4", "LT4", "HT5", "LT5", "Unranked"]
-
-POINTS = {
-    "HT1": 50, "LT1": 45, "HT2": 40, "LT2": 35, "HT3": 30,
-    "LT3": 25, "HT4": 20, "LT4": 15, "HT5": 10, "LT5": 5, "Unranked": 0
-}
-
+ELO_RANGE = 251
+ELO_MATCH_SCORE_PREFIX = "@"
+ELO_WIN_DEFAULT = 22
+ELO_LOSE_DEFAULT = -22
+ELO_WIN_LOWER = 12
+ELO_LOSE_LOWER = -12
+ELO_WIN_HIGHER = 28
+ELO_LOSE_HIGHER = -28
 ELO_MIN = 0
-ELO_MATCH_SCORE_PREFIX = "MATCH_"
 
+# ==========================================
+# JÁTÉKMÓDOK ÉS RANGOK (ADATBÁZIS)
+# ==========================================
 TICKET_TYPES = [
-    ("Vanilla", "vanilla", 1489190924771381289),
-    ("UHC", "uhc", 1489190956975296562),
-    ("Pot", "pot", 1489190987178442833),
-    ("Nethpot", "nethpot", 1489190938360918076),
-    ("SMP", "smp", 1489191000868655265),
-    ("Sword", "sword", 1489190892018040852),
-    ("Axe", "axe", 1489190906236735518),
-    ("Mace", "mace", 1489190875601535038),
-    ("Cart", "cart", 1489191029272399993),
-    ("Creeper", "creeper", 1489191016626655242),
-    ("DiaSMP", "diasmp", 1489191039837933610),
-    ("Spear Elytra", "spearelytra", 1489190973400416359),
+    ("Vanilla", "vanilla", "<:vanilla:1489191023308574730>"),
+    ("UHC", "uhc", "<:uhc:1489191005902209134>"),
+    ("Pot", "pot", "<:pot:1489190923333013597>"),
+    ("NethPot", "nethpot", "<:nethpot:1489190890550464543>"),
+    ("SMP", "smp", "<:smp:1489190957306871938>"),
+    ("Sword", "sword", "<:sword:1489190989150163034>"),
+    ("Axe", "axe", "<:axe:1489190775085338817>"),
+    ("Mace", "mace", "<:mace:1489190873777438791>"),
+    ("Cart", "cart", "<:cart:1489190821390581860>"),
+    ("Creeper", "creeper", "<:creeper:1489190838763393104>"),
+    ("DiaSMP", "diasmp", "<:diasmp:1489190856903757884>"),
+    ("OGVanilla", "ogvanilla", "<:ogvanilla:1489190908477046804>"),
+    ("ShieldlessUHC", "shieldlessuhc", "<:shieldlessuhc:1489190941872095292>"),
+    ("SpearMace", "spearmace", "<:spearmace:1489190973400416359>"),
+    ("SpearElytra", "spearelytra", "<:spearelytra:1489190973400416359>"),
+    ("Stick Fight", "stickfight", "<:stickfight:1502574877536948334>"),
+    ("Trident", "trident", "<:trident:1505194733629210664>")
 ]
 
 LEGACY_TICKET_TYPES = [
-    ("Stick Fight", "stickfight", 1502574877536948334),
-    ("Trident", "trident", 1505194733629210664),
-    ("Boxing", "boxing", 1520465463358783639),
-    ("Combo", "combo", 1520465407474008147),
-    ("Bridge", "bridge", 1520465430957916331),
-    ("NoDebuff", "nodebuff", 1520465050974814319),
-    ("OP", "op", 1520465323680075937),
-    ("Soup", "soup", 1520465218096857280),
-    ("Fireball Fight", "fireballfight", 1520465183884181636),
+    ("Boxing", "boxing", "<:Boxing:1520465463358783639>"),
+    ("Combo", "combo", "<:Combo:1520465407474008147>"),
+    ("Bridge", "bridge", "<:Bridge:1520465430957916331>"),
+    ("No Debuff", "nodebuff", "<:NoDebuff:1520465050974814319>"),
+    ("OP", "op", "<:OP:1520465323680075937>"),
+    ("Soup", "soup", "<:Soup:1520465218096857280>"),
+    ("Fireball Fight", "fireballfight", "<:FireballFight:1520465183884181636>")
 ]
 
+# Egyesített lista minden játékmódhoz
 ALL_TICKET_TYPES = TICKET_TYPES + LEGACY_TICKET_TYPES
 
-GAMEMODE_DISPLAY_NAMES = {
-    "vanilla": "Vanilla", "uhc": "UHC", "pot": "Pot", "nethpot": "Nethpot",
-    "smp": "SMP", "sword": "Sword", "axe": "Axe", "mace": "Mace",
-    "cart": "Cart", "creeper": "Creeper", "diasmp": "DiaSMP",
-    "spearelytra": "Spear Elytra", "stickfight": "Stick Fight",
-    "trident": "Trident", "boxing": "Boxing", "combo": "Combo",
-    "bridge": "Bridge", "nodebuff": "NoDebuff", "op": "OP",
-    "soup": "Soup", "fireballfight": "Fireball Fight"
+MODE_LIST = [t[0] for t in ALL_TICKET_TYPES]
+GAMEMODE_DISPLAY_TO_KEY = {display.lower(): key for display, key, _ in ALL_TICKET_TYPES}
+
+RANKS = [
+    "Unranked", "LT5", "HT5", "LT4", "HT4", 
+    "LT3", "HT3", "LT2", "HT2", "LT1", "HT1"
+]
+
+POINTS = {
+    "Unranked": 0, "LT5": 1, "HT5": 2, "LT4": 3, "HT4": 4,
+    "LT3": 6, "HT3": 10, "LT2": 16, "HT2": 28, "LT1": 40, "HT1": 60,
 }
 
-MODE_INDICATORS = {
-    "vanilla": "<:vanilla:1489190924771381289>",
-    "uhc": "<:uhc:1489190956975296562>",
-    "pot": "<:pot:1489190987178442833>",
-    "nethpot": "<:nethpot:1489190938360918076>",
-    "smp": "<:smp:1489191000868655265>",
-    "sword": "<:sword:1489190892018040852>",
-    "axe": "<:axe:1489190906236735518>",
-    "mace": "<:mace:1489190875601535038>",
-    "cart": "<:cart:1489191029272399993>",
-    "creeper": "<:creeper:1489191016626655242>",
-    "diasmp": "<:diasmp:1489191039837933610>",
-    "spearelytra": "<:spearelytra:1489190973400416359>",
-    "stickfight": "<:stickfight:1502574877536948334>",
+# Aliasok és megjelenítési nevek frissítése az összes (Modern + Legacy) móddal
+GAMEMODE_ALIASES = {
+    "ogv": "ogvanilla", "ogvanilla": "ogvanilla", "nethpot": "nethpot",
+    "uhc": "uhc", "shieldlessuhc": "shieldlessuhc", "spearmace": "spearmace",
+    "spearelytra": "spearelytra", "stickfight": "stickfight", "trident": "trident",
+    "nodebuff": "nodebuff", "fireballfight": "fireballfight"
+}
+
+GAMEMODE_DISPLAY_NAMES = {
+    "vanilla": "Vanilla", "uhc": "UHC", "pot": "Pot", "nethpot": "NethPot",
+    "smp": "SMP", "sword": "Sword", "axe": "Axe", "mace": "Mace", "cart": "Cart",
+    "creeper": "Creeper", "diasmp": "DiaSMP", "ogvanilla": "OGVanilla",
+    "shieldlessuhc": "ShieldlessUHC", "spearmace": "SpearMace", "spearelytra": "SpearElytra",
+    "stickfight": "Stick Fight", "trident": "Trident",
+    "boxing": "Boxing", "combo": "Combo", "bridge": "Bridge",
+    "nodebuff": "No Debuff", "op": "OP", "soup": "Soup", 
+    "fireballfight": "Fireball Fight"
+}
+
+# Indikátorok kiegészítve a Legacy módokkal is
+GAMEMODE_INDICATORS = {
+    "mace": "<:mace:1489190873777438791>", "sword": "<:sword:1489190989150163034>",
+    "vanilla": "<:vanilla:1489191023308574730>", "uhc": "<:uhc:1489191005902209134>",
+    "pot": "<:pot:1489190923333013597>", "nethpot": "<:nethpot:1489190890550464543>",
+    "smp": "<:smp:1489190957306871938>", "axe": "<:axe:1489190775085338817>",
+    "cart": "<:cart:1489190821390581860>", "creeper": "<:creeper:1489190838763393104>",
+    "diasmp": "<:diasmp:1489190856903757884>", "ogvanilla": "<:ogvanilla:1489190908477046804>",
+    "shieldlessuhc": "<:shieldlessuhc:1489190941872095292>", 
+    "spearmace": "<:spearmace:1489190973400416359>", "spearelytra": "<:spearelytra:1489190973400416359>",
+    "stickfight": "<:stickfight:1502574877536948334>", "stick fight": "<:stickfight:1502574877536948334>", 
     "trident": "<:trident:1505194733629210664>",
-    "boxing": "<:Boxing:1520465463358783639>",
-    "combo": "<:Combo:1520465407474008147>",
-    "bridge": "<:Bridge:1520465430957916331>",
-    "nodebuff": "<:NoDebuff:1520465050974814319>",
-    "op": "<:OP:1520465323680075937>",
-    "soup": "<:Soup:1520465218096857280>",
+    "boxing": "<:Boxing:1520465463358783639>", "combo": "<:Combo:1520465407474008147>",
+    "bridge": "<:Bridge:1520465430957916331>", "nodebuff": "<:NoDebuff:1520465050974814319>",
+    "op": "<:OP:1520465323680075937>", "soup": "<:Soup:1520465218096857280>", 
     "fireballfight": "<:FireballFight:1520465183884181636>"
 }
 
 # ==========================================
-# SEGÉDFÜGGVÉNYEK
+# EGYSZERŰ SEGÉDFÜGGVÉNYEK
 # ==========================================
 def normalize_gamemode(mode: str) -> str:
     if not mode:
-        return ""
-    m = mode.strip().lower().replace(" ", "").replace("_", "").replace("-", "")
-    mapping = {
-        "vanilla": "vanilla", "uhc": "uhc", "pot": "pot", "nethpot": "nethpot",
-        "smp": "smp", "sword": "sword", "axe": "axe", "mace": "mace",
-        "cart": "cart", "creeper": "creeper", "diasmp": "diasmp",
-        "spearelytra": "spearelytra", "stickfight": "stickfight",
-        "trident": "trident", "boxing": "boxing", "combo": "combo",
-        "bridge": "bridge", "nodebuff": "nodebuff", "op": "op",
-        "soup": "soup", "fireballfight": "fireballfight"
-    }
-    return mapping.get(m, m)
+        return mode
+    normalized = mode.lower().strip()
+    return GAMEMODE_ALIASES.get(normalized, normalized)
 
-def get_gamemode_display_name(mode: str) -> str:
-    norm = normalize_gamemode(mode)
-    return GAMEMODE_DISPLAY_NAMES.get(norm, mode.capitalize())
+def get_gamemode_display_name(mode_key: str) -> str:
+    if not mode_key:
+        return mode_key
+    if mode_key in GAMEMODE_DISPLAY_NAMES:
+        return GAMEMODE_DISPLAY_NAMES[mode_key]
+    return GAMEMODE_DISPLAY_NAMES.get(mode_key.lower().strip(), mode_key)
 
-def get_gamemode_indicator(mode: str) -> str:
-    norm = normalize_gamemode(mode)
-    return MODE_INDICATORS.get(norm, "⚔️")
-
-def get_rank_value_min(rank: str) -> int:
-    return POINTS.get(rank.upper(), 0)
+def get_gamemode_indicator(mode_key: str, is_open: bool = True) -> str:
+    if is_open:
+        return GAMEMODE_INDICATORS.get(mode_key.lower().strip(), "🟢")
+    return "🔴"
 
 def get_elo_for_rank(rank: str) -> int:
-    return POINTS.get(rank.upper(), 0)
+    if rank == "Unranked" or not rank:
+        return 500
+    pts = POINTS.get(rank, 0)
+    return max(ELO_MIN, pts * 100)
+
+def get_rank_value_min(rank: str) -> int:
+    return POINTS.get(rank, 0)
