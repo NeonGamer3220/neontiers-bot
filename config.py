@@ -107,6 +107,33 @@ GAMEMODE_DISPLAY_NAMES = {
     "soup": "Soup", "fireballfight": "Fireball Fight"
 }
 
+MODE_INDICATORS = {
+    "vanilla": "<:vanilla:1489190924771381289>",
+    "uhc": "<:uhc:1489190956975296562>",
+    "pot": "<:pot:1489190987178442833>",
+    "nethpot": "<:nethpot:1489190938360918076>",
+    "smp": "<:smp:1489191000868655265>",
+    "sword": "<:sword:1489190892018040852>",
+    "axe": "<:axe:1489190906236735518>",
+    "mace": "<:mace:1489190875601535038>",
+    "cart": "<:cart:1489191029272399993>",
+    "creeper": "<:creeper:1489191016626655242>",
+    "diasmp": "<:diasmp:1489191039837933610>",
+    "spearelytra": "<:spearelytra:1489190973400416359>",
+    "stickfight": "<:stickfight:1502574877536948334>",
+    "trident": "<:trident:1505194733629210664>",
+    "boxing": "<:Boxing:1520465463358783639>",
+    "combo": "<:Combo:1520465407474008147>",
+    "bridge": "<:Bridge:1520465430957916331>",
+    "nodebuff": "<:NoDebuff:1520465050974814319>",
+    "op": "<:OP:1520465323680075937>",
+    "soup": "<:Soup:1520465218096857280>",
+    "fireballfight": "<:FireballFight:1520465183884181636>"
+}
+
+# ==========================================
+# SEGÉDFÜGGVÉNYEK
+# ==========================================
 def normalize_gamemode(mode: str) -> str:
     if not mode:
         return ""
@@ -125,3 +152,13 @@ def normalize_gamemode(mode: str) -> str:
 def get_gamemode_display_name(mode: str) -> str:
     norm = normalize_gamemode(mode)
     return GAMEMODE_DISPLAY_NAMES.get(norm, mode.capitalize())
+
+def get_gamemode_indicator(mode: str) -> str:
+    norm = normalize_gamemode(mode)
+    return MODE_INDICATORS.get(norm, "⚔️")
+
+def get_rank_value_min(rank: str) -> int:
+    return POINTS.get(rank.upper(), 0)
+
+def get_elo_for_rank(rank: str) -> int:
+    return POINTS.get(rank.upper(), 0)
