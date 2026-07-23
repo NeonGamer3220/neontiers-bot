@@ -117,10 +117,6 @@ async def supabase_delete(table: str, filters: Dict[str, str]) -> bool:
 # INSTANT UPSERT ELO RÖGZÍTÉS
 # ==========================================
 async def api_post_elo_instant(username: str, mode: str, elo: str, tester: str) -> bool:
-    """
-    Instant Eredmény Rögzítés (Upsert):
-    Egyetlen REST API kéréssel beszúrja vagy azonnal frissíti a játékos Tier-jét.
-    """
     if not SUPABASE_URL or not SUPABASE_KEY:
         return False
 
@@ -145,39 +141,59 @@ async def api_post_elo_instant(username: str, mode: str, elo: str, tester: str) 
         return False
 
 # ==========================================
-# MINECRAFT LINKELÉS ÉS TGF COOLDOWN
+# MINECRAFT LINKELÉS (linked_accounts & pending_codes)
 # ==========================================
 async def get_linked_minecraft_name_async(discord_id: int) -> Optional[str]:
-    results = await supabase_select("user_links", {"discord_id": str(discord_id)})
-    if results:
-        return results[0].get("minecraft_name")
+    if USE_SUPABASE_API:
+        results = await supabase_select("linked_accounts", {"discord_id": str(discord_id)})
+        if results and len(results) > 0:
+            return results[0].get("minecraft_name")
     return None
 
-async def get_discord_by_minecraft_async(mc_name: str) -> Optional[int]:
-    results = await supabase_select("user_links", {"minecraft_name": mc_name})
-    if results:
-        try:
-            return int(results[0].get("discord_id"))
-        except (ValueError, TypeError):
-            return None
+async def get_discord_by_minecraft_async(minecraft_name: str) -> Optional[int]:
+    if USE_SUPABASE_API:
+        results = await supabase_select("linked_accounts", {"minecraft_name": minecraft_name})
+        if results and len(results) > 0:
+            d_id = results[0].get("discord_id")
+            return int(d_id) if d_id else None
     return None
-
-async def generate_link_code_async(discord_id: int) -> Optional[str]:
-    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=LINK_CODE_LENGTH))
-    expires_at = time.time() + (LINK_CODE_EXPIRY_MINUTES * 60)
-    
-    await supabase_delete("pending_links", {"discord_id": str(discord_id)})
-    
-    success = await supabase_insert("pending_links", {
-        "code": code,
-        "discord_id": str(discord_id),
-        "expires_at": expires_at
-    })
-    return code if success else None
 
 async def unlink_minecraft_account_async(discord_id: int) -> bool:
-    return await supabase_delete("user_links", {"discord_id": str(discord_id)})
+    if USE_SUPABASE_API:
+        return await supabase_delete("linked_accounts", {"discord_id": str(discord_id)})
+    return False
 
+def _generate_random_code(length: int = LINK_CODE_LENGTH) -> str:
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+async def generate_link_code_async(discord_id: int) -> Optional[str]:
+    """Generates a link code for /link and saves it to pending_codes."""
+    code = _generate_random_code()
+    expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=LINK_CODE_EXPIRY_MINUTES)
+    
+    if USE_SUPABASE_API:
+        # Töröljük a korábbi ideiglenes kódokat erről a discord id-ról
+        await supabase_delete("pending_codes", {"discord_id": str(discord_id)})
+        
+        success = await supabase_insert("pending_codes", {
+            "code": code,
+            "discord_id": str(discord_id),
+            "expires_at": expires_at.isoformat()
+        })
+        if success:
+            return code
+    return None
+
+# Sync verziók visszafelé kompatibilitás miatt
+def get_linked_minecraft_name(discord_id: int) -> Optional[str]:
+    try:
+        return asyncio.run(get_linked_minecraft_name_async(discord_id))
+    except Exception:
+        return None
+
+# ==========================================
+# TGF COOLDOWN SYSTEM
+# ==========================================
 async def get_tgf_cooldown(discord_id: int) -> Optional[datetime.datetime]:
     results = await supabase_select("tgf_cooldowns", {"discord_id": str(discord_id)})
     if results and len(results) > 0:
