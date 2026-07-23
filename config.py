@@ -104,6 +104,14 @@ ALL_TICKET_TYPES = TICKET_TYPES + LEGACY_TICKET_TYPES
 
 MODE_LIST = [t[0] for t in ALL_TICKET_TYPES]
 GAMEMODE_DISPLAY_TO_KEY = {display.lower(): key for display, key, _ in ALL_TICKET_TYPES}
+TGF_COOLDOWN_DAYS = int(os.getenv("TGF_COOLDOWN_DAYS", "14"))
+HTTP_TIMEOUT_SECONDS = 10
+COOLDOWN_SECONDS = 14 * 24 * 60 * 60
+DATA_FILE = "data.json"
+TESTS_TABLE = "tests"
+
+# TGF és TICKET beállítások
+TGF_COOLDOWN_DAYS = int(os.getenv("TGF_COOLDOWN_DAYS", "14"))
 
 RANKS = [
     "Unranked", "LT5", "HT5", "LT4", "HT4", 
