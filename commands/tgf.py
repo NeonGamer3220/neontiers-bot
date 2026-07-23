@@ -2,11 +2,10 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import asyncio
-import time
 import datetime
 
 from database import get_tgf_cooldown, set_tgf_cooldown
-from commands.staff import is_staff_member, is_regulator_member
+from commands.staff import is_staff_member
 from config import TGF_LOG_CHANNEL_ID, TGF_COOLDOWN_DAYS
 
 QUESTIONS = [
