@@ -1,24 +1,14 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord import app_commands
 import json
-import time
 import os
 import datetime
-from typing import Optional, Literal
 
-from config import (
-    TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES,
-    REGULATOR_ROLE_ID, STAFF_ROLE_ID, TIER_RESULTS_CHANNEL_ID,
-    ELO_TICKET_CATEGORY_ID, LEGACY_TICKET_CATEGORY_ID,
-    get_gamemode_display_name, POINTS
-)
-from commands.ban_enforcement import is_banned_by_role
-from database import get_linked_minecraft_name_async, supabase_select, supabase_insert
+from config import TIER_RESULTS_CHANNEL_ID, get_gamemode_display_name
+from database import api_post_elo_instant
 
 COOLDOWN_FILE = "tier_cooldowns.json"
-HT_TICKETS_FILE = "ht_tickets.json"
-ACTIVE_QUEUES = {}
 
 def _load_cooldowns() -> dict:
     if not os.path.exists(COOLDOWN_FILE):
@@ -38,7 +28,7 @@ def _save_cooldowns(data: dict):
 
 class SubmitTierModal(discord.ui.Modal, title="Eredmény Rögzítése"):
     player_mc = discord.ui.TextInput(label="Játékos Minecraft neve", placeholder="Minecraft_Név", required=True)
-    gamemode = discord.ui.TextInput(label="Játékmód", placeholder="Sword, Mace, etc.", required=True)
+    gamemode = discord.ui.TextInput(label="Játékmód", placeholder="Sword, Mace, stb.", required=True)
     achieved_tier = discord.ui.TextInput(label="Elért Tier / Rang", placeholder="HT3, LT2, Unranked", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -48,19 +38,19 @@ class SubmitTierModal(discord.ui.Modal, title="Eredmény Rögzítése"):
         mode_display = get_gamemode_display_name(self.gamemode.value.strip())
         rank_val = self.achieved_tier.value.strip().upper()
 
-        success = await supabase_insert("tests", {
-            "username": mc_name,
-            "gamemode": mode_display,
-            "rank": rank_val,
-            "tester": interaction.user.display_name,
-            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-        })
+        # Instant Upsert Hívás az azonnali rögzítéshez
+        success = await api_post_elo_instant(
+            username=mc_name,
+            mode=mode_display,
+            elo=rank_val,
+            tester=interaction.user.display_name
+        )
 
         if success:
             res_channel = interaction.guild.get_channel(TIER_RESULTS_CHANNEL_ID)
             if res_channel:
                 embed = discord.Embed(
-                    title="📊 Új Tier Eredmény!",
+                    title="📊 Új Tier Eredmény Rögzítve!",
                     color=discord.Color.green(),
                     timestamp=datetime.datetime.now(datetime.timezone.utc)
                 )
@@ -70,7 +60,7 @@ class SubmitTierModal(discord.ui.Modal, title="Eredmény Rögzítése"):
                 embed.set_footer(text=f"Tesztelő: {interaction.user.display_name}")
                 await res_channel.send(embed=embed)
 
-            await interaction.followup.send("✅ Eredmény sikeresen rögzítve!", ephemeral=True)
+            await interaction.followup.send(f"⚡ **Azonnal rögzítve!** `{mc_name}` -> `{mode_display}`: **{rank_val}**", ephemeral=True)
         else:
             await interaction.followup.send("❌ Hiba történt az eredmény mentésekor az adatbázisba.", ephemeral=True)
 
