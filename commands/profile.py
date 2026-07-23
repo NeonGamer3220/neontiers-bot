@@ -2,8 +2,30 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import traceback
+
 from database import get_linked_minecraft_name_async, supabase_select
-from config import TICKET_TYPES, LEGACY_TICKET_TYPES
+from config import TICKET_TYPES, LEGACY_TICKET_TYPES, GAMEMODE_INDICATORS, normalize_gamemode
+
+
+def get_emoji_from_config(mode_key: str, fallback_emoji: str) -> str:
+    """
+    Szigorúan kisbetűsített és tisztított kulcs alapján keresi meg az emojit a GAMEMODE_INDICATORS-ban.
+    """
+    # Tisztítjuk a kulcsot: pl. "Spear Elytra" -> "spearelytra"
+    clean_key = mode_key.lower().replace(" ", "").replace("-", "").strip()
+    norm_key = normalize_gamemode(clean_key)
+
+    # 1. Próba a tisztított kulccsal
+    if norm_key in GAMEMODE_INDICATORS:
+        return GAMEMODE_INDICATORS[norm_key]
+    
+    # 2. Próba a szimpla tisztított kulccsal
+    if clean_key in GAMEMODE_INDICATORS:
+        return GAMEMODE_INDICATORS[clean_key]
+
+    # 3. Ha semmi nem nyert, visszaadja a TICKET_TYPES-ból a 3. elemet
+    return fallback_emoji or "⚔️"
+
 
 class ProfileCog(commands.Cog):
     def __init__(self, bot):
@@ -25,66 +47,50 @@ class ProfileCog(commands.Cog):
                     await interaction.followup.send("❌ Még nem linkelted a Minecraft fiókodat! Használd a `/link` parancsot.")
                 return
 
-            all_tests = await supabase_select("tests")
+            user_tests = await supabase_select("tests", {"username": mc_name})
             user_tiers = {}
             
-            if all_tests:
-                for row in all_tests:
-                    if str(row.get("username", "")).strip().lower() == mc_name.lower():
-                        gmode = str(row.get("gamemode", "")).strip().lower()
-                        tier_val = str(row.get("rank", "Unranked"))
-                        
-                        if tier_val == "500":
-                            tier_val = "Unranked"
-                            
-                        if tier_val.upper() == "UNRANKED":
-                            tier_val = "Unranked"
-                        else:
-                            tier_val = tier_val.upper()
-                            
-                        user_tiers[gmode] = tier_val
+            if user_tests:
+                for row in user_tests:
+                    gmode = str(row.get("gamemode", "")).lower().replace(" ", "").replace("-", "").strip()
+                    rnk = str(row.get("rank", "Unranked")).strip()
+                    if rnk == "500":
+                        rnk = "Unranked"
+                    user_tiers[gmode] = rnk
 
-            # ================================
-            # ELSŐ EMBED: MODERN JÁTÉKMÓDOK
-            # ================================
+            # ===============================
+            # MODERN MÓDOK EMBED
+            # ===============================
             embed_modern = discord.Embed(
-                title=f"🎮 {mc_name} Tier Profilja",
-                description=f"**Minecraft név:** `{mc_name}`\n**Discord:** {target_user.mention}",
-                color=discord.Color.gold()
+                title=f"⚔️ {mc_name} Tier Profilja",
+                color=discord.Color.blue()
             )
-            # Itt cseréljük a Discord avatárt a Minecraft fejre!
             embed_modern.set_thumbnail(url=f"https://minotar.net/helm/{mc_name}/256.png")
+            embed_modern.add_field(name="───────────────", value="**🔥 MODERN MÓDOK**", inline=False)
 
-            embed_modern.add_field(name="───────────────", value="**⚡ MODERN MÓDOK**", inline=False)
-            for label, key, emoji_raw in TICKET_TYPES:
-                tier = user_tiers.get(label.lower(), "Unranked")
+            for label, key, raw_emoji in TICKET_TYPES:
+                clean_key = key.lower().replace(" ", "").replace("-", "").strip()
+                tier = user_tiers.get(clean_key, user_tiers.get(label.lower(), "Unranked"))
                 
-                emoji_str = str(emoji_raw)
-                if emoji_str.isdigit():
-                    safe_name = label.replace(" ", "").replace("-", "")
-                    emoji_str = f"<:{safe_name}:{emoji_str}>"
-                    
+                emoji_str = get_emoji_from_config(key, raw_emoji)
                 embed_modern.add_field(name=f"{emoji_str} {label}", value=f"**{tier}**", inline=True)
-                
+
             mod_rem = len(TICKET_TYPES) % 3
             if mod_rem != 0:
                 for _ in range(3 - mod_rem):
                     embed_modern.add_field(name="\u200b", value="\u200b", inline=True)
 
-            # ================================
-            # MÁSODIK EMBED: LEGACY JÁTÉKMÓDOK
-            # ================================
+            # ===============================
+            # LEGACY MÓDOK EMBED
+            # ===============================
             embed_legacy = discord.Embed(color=discord.Color.gold())
             embed_legacy.add_field(name="───────────────", value="**🏛️ LEGACY MÓDOK**", inline=False)
             
-            for label, key, emoji_raw in LEGACY_TICKET_TYPES:
-                tier = user_tiers.get(label.lower(), "Unranked")
+            for label, key, raw_emoji in LEGACY_TICKET_TYPES:
+                clean_key = key.lower().replace(" ", "").replace("-", "").strip()
+                tier = user_tiers.get(clean_key, user_tiers.get(label.lower(), "Unranked"))
                 
-                emoji_str = str(emoji_raw)
-                if emoji_str.isdigit():
-                    safe_name = label.replace(" ", "").replace("-", "")
-                    emoji_str = f"<:{safe_name}:{emoji_str}>"
-                    
+                emoji_str = get_emoji_from_config(key, raw_emoji)
                 embed_legacy.add_field(name=f"{emoji_str} {label}", value=f"**{tier}**", inline=True)
 
             leg_rem = len(LEGACY_TICKET_TYPES) % 3
@@ -96,7 +102,7 @@ class ProfileCog(commands.Cog):
             
         except Exception as e:
             print(f"[PROFILE ERROR] {traceback.format_exc()}")
-            await interaction.followup.send(f"❌ Hiba történt a profil betöltésekor: `{e}`")
+            await interaction.followup.send("❌ Hiba történt a profil lekérdezése közben.")
 
 async def setup(bot):
     await bot.add_cog(ProfileCog(bot))
