@@ -27,6 +27,10 @@ HELP_TICKET_CATEGORY_ID = int(os.getenv("HELP_TICKET_CATEGORY_ID", "152439186068
 BANNED_ROLE_ID = int(os.getenv("BANNED_ROLE_ID", "1496877749388972143"))
 TIER_RESULTS_CHANNEL_ID = int(os.getenv("TIER_RESULTS_CHANNEL_ID", "0"))
 
+# Újonnan hozzáadott hiányzó csatorna ID-k
+TGF_LOG_CHANNEL_ID = int(os.getenv("TGF_LOG_CHANNEL_ID", "0"))
+BAN_CHANNEL_ID = int(os.getenv("BAN_CHANNEL_ID", "0"))
+
 # ==========================================
 # RENDSZER ÉS WEBOLDAL BEÁLLÍTÁSOK
 # ==========================================
