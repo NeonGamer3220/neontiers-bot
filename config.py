@@ -3,7 +3,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ==========================================\n# ALAPVETŐ BEÁLLÍTÁSOK ÉS DISCORD ID-K\n# ==========================================\nDISCORD_TOKEN = os.getenv("DISCORD_TOKEN") or os.getenv("BOT_TOKEN") or os.getenv("TOKEN")
+# ==========================================
+# ALAPVETŐ BEÁLLÍTÁSOK ÉS DISCORD ID-K
+# ==========================================
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN") or os.getenv("BOT_TOKEN") or os.getenv("TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 
 # Role ID-k
@@ -29,7 +32,12 @@ ELO_TICKET_CATEGORY_ID = int(os.getenv("ELO_TICKET_CATEGORY_ID", "0"))
 LEGACY_TICKET_CATEGORY_ID = int(os.getenv("LEGACY_TICKET_CATEGORY_ID", "0"))
 HELP_TICKET_CATEGORY_ID = int(os.getenv("HELP_TICKET_CATEGORY_ID", "0"))
 
-# ==========================================\n# ADATBÁZIS ÉS WEBOLDAL BEÁLLÍTÁSOK\n# ==========================================\nWEBSITE_URL = os.getenv("WEBSITE_URL", "https://neontiers.hu").rstrip('/')
+TGF_COOLDOWN_DAYS = 30
+
+# ==========================================
+# ADATBÁZIS ÉS WEBOLDAL BEÁLLÍTÁSOK
+# ==========================================
+WEBSITE_URL = os.getenv("WEBSITE_URL", "https://neontiers.hu").rstrip('/')
 BOT_API_KEY = os.getenv("BOT_API_KEY", "")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip('/')
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
@@ -42,7 +50,10 @@ HTTP_TIMEOUT_SECONDS = 15
 LINK_CODE_LENGTH = 8
 LINK_CODE_EXPIRY_MINUTES = 10
 
-# ==========================================\n# JÁTÉKMÓDOK ÉS ELO BEÁLLÍTÁSOK\n# ==========================================\nMODE_LIST = [
+# ==========================================
+# JÁTÉKMÓDOK ÉS ELO BEÁLLÍTÁSOK
+# ==========================================
+MODE_LIST = [
     "vanilla", "uhc", "pot", "nethpot", "smp", "sword",
     "axe", "mace", "cart", "creeper", "diasmp", "spearelytra"
 ]
