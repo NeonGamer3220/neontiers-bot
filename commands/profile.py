@@ -4,7 +4,7 @@ from discord import app_commands
 import traceback
 
 from database import get_linked_minecraft_name_async, supabase_select
-from config import TICKET_TYPES, LEGACY_TICKET_TYPES
+from config import TICKET_TYPES, LEGACY_TICKET_TYPES, MODE_INDICATORS, normalize_gamemode
 
 class ProfileCog(commands.Cog):
     def __init__(self, bot):
@@ -45,12 +45,12 @@ class ProfileCog(commands.Cog):
             embed_modern.add_field(name="───────────────", value="**🔥 MODERN MÓDOK**", inline=False)
 
             for label, key, emoji_raw in TICKET_TYPES:
-                tier = user_tiers.get(label.lower(), "Unranked")
-                emoji_str = str(emoji_raw)
-                if emoji_str.isdigit():
-                    safe_name = label.replace(" ", "").replace("-", "")
-                    emoji_str = f"<:{safe_name}:{emoji_str}>"
+                norm_key = normalize_gamemode(key)
+                tier = user_tiers.get(label.lower(), user_tiers.get(norm_key, "Unranked"))
                 
+                # A config.py MODE_INDICATORS szótárából veszi a pontos Formázott Emojit
+                emoji_str = MODE_INDICATORS.get(norm_key, "⚔️")
+
                 embed_modern.add_field(name=f"{emoji_str} {label}", value=f"**{tier}**", inline=True)
 
             mod_rem = len(TICKET_TYPES) % 3
@@ -62,11 +62,10 @@ class ProfileCog(commands.Cog):
             embed_legacy.add_field(name="───────────────", value="**🏛️ LEGACY MÓDOK**", inline=False)
             
             for label, key, emoji_raw in LEGACY_TICKET_TYPES:
-                tier = user_tiers.get(label.lower(), "Unranked")
-                emoji_str = str(emoji_raw)
-                if emoji_str.isdigit():
-                    safe_name = label.replace(" ", "").replace("-", "")
-                    emoji_str = f"<:{safe_name}:{emoji_str}>"
+                norm_key = normalize_gamemode(key)
+                tier = user_tiers.get(label.lower(), user_tiers.get(norm_key, "Unranked"))
+                
+                emoji_str = MODE_INDICATORS.get(norm_key, "⚔️")
                     
                 embed_legacy.add_field(name=f"{emoji_str} {label}", value=f"**{tier}**", inline=True)
 
