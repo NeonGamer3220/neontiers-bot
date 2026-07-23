@@ -45,8 +45,10 @@ async def close_db():
         await http_session.close()
         print("[DATABASE] HTTP session lezárva.")
 
-# ==========================================\n# OPTIMALIZÁLT SUPABASE API FUNKCIÓK\n# ==========================================\nasync def supabase_select(table: str, filters: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
-    """Szerveroldali szűrést használó Supabase SELECT lekérdezés."""
+# ==========================================
+# OPTIMALIZÁLT SUPABASE API FUNKCIÓK
+# ==========================================
+async def supabase_select(table: str, filters: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
     if not SUPABASE_URL or not SUPABASE_KEY:
         print("[DATABASE ERROR] Supabase URL vagy KEY hiányzik.")
         return []
@@ -111,15 +113,47 @@ async def supabase_delete(table: str, filters: Dict[str, str]) -> bool:
         print(f"[SUPABASE DELETE ERROR] {e}")
         return False
 
-# ==========================================\n# MINECRAFT LINKELÉS ÉS PROFIL SZŰRÉSEK\n# ==========================================\nasync def get_linked_minecraft_name_async(discord_id: int) -> Optional[str]:
-    """Célzott szűrést végez Discord ID alapján."""
+# ==========================================
+# INSTANT UPSERT ELO RÖGZÍTÉS
+# ==========================================
+async def api_post_elo_instant(username: str, mode: str, elo: str, tester: str) -> bool:
+    """
+    Instant Eredmény Rögzítés (Upsert):
+    Egyetlen REST API kéréssel beszúrja vagy azonnal frissíti a játékos Tier-jét.
+    """
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return False
+
+    url = f"{SUPABASE_URL}/rest/v1/tests"
+    headers = supabase_headers()
+    headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
+
+    payload = {
+        "username": username,
+        "gamemode": mode,
+        "rank": elo,
+        "tester": tester,
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }
+
+    session = await get_session()
+    try:
+        async with session.post(url, headers=headers, json=payload, params={"on_conflict": "username,gamemode"}) as resp:
+            return resp.status in (200, 201, 204)
+    except Exception as e:
+        print(f"[INSTANT ELO POST ERROR] {e}")
+        return False
+
+# ==========================================
+# MINECRAFT LINKELÉS ÉS TGF COOLDOWN
+# ==========================================
+async def get_linked_minecraft_name_async(discord_id: int) -> Optional[str]:
     results = await supabase_select("user_links", {"discord_id": str(discord_id)})
     if results:
         return results[0].get("minecraft_name")
     return None
 
 async def get_discord_by_minecraft_async(mc_name: str) -> Optional[int]:
-    """Célzott szűrés Minecraft név alapján."""
     results = await supabase_select("user_links", {"minecraft_name": mc_name})
     if results:
         try:
@@ -132,7 +166,6 @@ async def generate_link_code_async(discord_id: int) -> Optional[str]:
     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=LINK_CODE_LENGTH))
     expires_at = time.time() + (LINK_CODE_EXPIRY_MINUTES * 60)
     
-    # Először töröljük a régi lehetséges kódját
     await supabase_delete("pending_links", {"discord_id": str(discord_id)})
     
     success = await supabase_insert("pending_links", {
@@ -144,3 +177,23 @@ async def generate_link_code_async(discord_id: int) -> Optional[str]:
 
 async def unlink_minecraft_account_async(discord_id: int) -> bool:
     return await supabase_delete("user_links", {"discord_id": str(discord_id)})
+
+async def get_tgf_cooldown(discord_id: int) -> Optional[datetime.datetime]:
+    results = await supabase_select("tgf_cooldowns", {"discord_id": str(discord_id)})
+    if results and len(results) > 0:
+        expires_str = results[0].get("expires_at")
+        if expires_str:
+            expires_dt = datetime.datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
+            if datetime.datetime.now(datetime.timezone.utc) < expires_dt:
+                return expires_dt
+            else:
+                await supabase_delete("tgf_cooldowns", {"discord_id": str(discord_id)})
+    return None
+
+async def set_tgf_cooldown(discord_id: int, days: int = 30) -> bool:
+    expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=days)
+    await supabase_delete("tgf_cooldowns", {"discord_id": str(discord_id)})
+    return await supabase_insert("tgf_cooldowns", {
+        "discord_id": str(discord_id),
+        "expires_at": expires_at.isoformat()
+    })
