@@ -56,7 +56,6 @@ class ProfileCog(commands.Cog):
         if db._client:
             try:
                 def fetch_tests():
-                    # ilike használsatával nem számít a kis/nagybetű!
                     resp = db._client.table("tests").select("*").ilike("username", mc_name).execute()
                     return resp.data or []
 
@@ -78,7 +77,7 @@ class ProfileCog(commands.Cog):
 
         if user_tests:
             for test in user_tests:
-                # Ha el van vonva (retired), kihagyjuk
+                # Elvonatkoztatott/visszavont tesztek kiszűrése
                 if test.get("retired"):
                     continue
 
@@ -89,6 +88,7 @@ class ProfileCog(commands.Cog):
                 display_name = get_gamemode_display_name(norm_mode)
                 indicator = get_gamemode_indicator(norm_mode)
 
+                # Formázott sor az ikonnal és megnevezéssel
                 entry = f"{indicator} **{display_name}:** `{rank}`"
 
                 # Különválasztás: Legacy vagy Modern játékmód
@@ -97,7 +97,7 @@ class ProfileCog(commands.Cog):
                 else:
                     modern_results.append(entry)
 
-        # Modern eredmények megjelenítése
+        # Modern eredmények megjelenítése (új sorokkal elválasztva)
         if modern_results:
             embed.add_field(
                 name="📊 Modern Tier Eredmények",
@@ -111,7 +111,7 @@ class ProfileCog(commands.Cog):
                 inline=False
             )
 
-        # Legacy eredmények megjelenítése
+        # Legacy eredmények megjelenítése (ha vannak)
         if legacy_results:
             embed.add_field(
                 name="📜 Legacy Tier Eredmények",
