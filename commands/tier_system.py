@@ -13,10 +13,10 @@ from config import (
     TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES,
     REGULATOR_ROLE_ID, STAFF_ROLE_ID, TIER_RESULTS_CHANNEL_ID,
     ELO_TICKET_CATEGORY_ID, LEGACY_TICKET_CATEGORY_ID,
-    get_gamemode_display_name, POINTS
+    get_gamemode_display_name, POINTS, SUPABASE_URL, SUPABASE_KEY
 )
 from commands.ban_enforcement import is_banned_by_role
-from database import get_linked_minecraft_name_async, supabase_select, get_session, supabase_headers, SUPABASE_URL
+from database import get_linked_minecraft_name_async, supabase_select
 
 # ==========================================
 # ADATTÁROLÓK & CONSTANSOK
@@ -44,8 +44,13 @@ ALLOWED_QUEUE_TIERS = ["UNRANKED", "LT5", "HT5", "LT4", "HT4", "LT3"]
 async def save_test_result_supabase(username: str, gamemode_display: str, rank: str, points: int, existing_id: Optional[int] = None):
     """Beszúrja vagy frissíti a teszt eredményét a Supabase 'tests' táblában."""
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    session = await get_session()
-    headers = supabase_headers()
+    
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
     
     payload = {
         "username": username,
@@ -56,14 +61,15 @@ async def save_test_result_supabase(username: str, gamemode_display: str, rank: 
     }
     
     try:
-        if existing_id:
-            url = f"{SUPABASE_URL}/rest/v1/tests?id=eq.{existing_id}"
-            async with session.patch(url, headers=headers, json=payload) as resp:
-                pass
-        else:
-            url = f"{SUPABASE_URL}/rest/v1/tests"
-            async with session.post(url, headers=headers, json=payload) as resp:
-                pass
+        async with aiohttp.ClientSession() as session:
+            if existing_id:
+                url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/tests?id=eq.{existing_id}"
+                async with session.patch(url, headers=headers, json=payload):
+                    pass
+            else:
+                url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/tests"
+                async with session.post(url, headers=headers, json=payload):
+                    pass
     except Exception as e:
         print(f"[ERROR] Supabase mentési hiba: {e}")
 
@@ -97,7 +103,6 @@ def check_timeout(discord_id: int) -> bool:
     return False
 
 def get_ticket_category(guild: discord.Guild, mode_key: str) -> Optional[discord.CategoryChannel]:
-    """Visszaadja a kategóriát: Modern -> ELO_TICKET_CATEGORY_ID, Legacy -> LEGACY_TICKET_CATEGORY_ID."""
     is_legacy = any(k == mode_key for _, k, _ in LEGACY_TICKET_TYPES)
     cat_id = LEGACY_TICKET_CATEGORY_ID if is_legacy else ELO_TICKET_CATEGORY_ID
     category = guild.get_channel(cat_id) if cat_id else None
@@ -486,7 +491,6 @@ class HTRequestButton(discord.ui.Button):
         if not mc_name:
             return await interaction.followup.send("❌ Nincs Minecraft fiókod linkelve!", ephemeral=True)
 
-        # LT3 vagy magasabb tier ellenőrzés
         player_tests = await supabase_select("tests", {"username": mc_name})
         mode_display = get_gamemode_display_name(self.mode_key)
         
