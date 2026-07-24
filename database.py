@@ -198,3 +198,44 @@ async def get_tgf_cooldown(discord_id: int) -> int | None:
     # Ha van TGF cooldown táblád a Supabase-ben, innen kérhető le
     res = await arun(supabase_select, "tgf_cooldowns", "discord_id", discord_id)
     return res[0].get("cooldown_until") if res else None
+
+# ======================================================================
+# HIÁNYZÓ KOMPATIBILITÁSI FÜGGVÉNYEK A COG-OKHOZ
+# ======================================================================
+
+async def api_post_elo_instant(*args: Any, **kwargs: Any) -> dict:
+    """Ideiglenes stubs az instant Elo frissítéshez."""
+    log.info("api_post_elo_instant meghívva")
+    return {"status": "ok"}
+
+async def set_tgf_cooldown(discord_id: int, days: int = 14) -> bool:
+    """TGF Cooldown rögzítése."""
+    if not db._client:
+        return False
+    until = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    resp = db._client.table("tgf_cooldowns").upsert({
+        "discord_id": discord_id,
+        "cooldown_until": until
+    }).execute()
+    return bool(resp.data)
+
+async def generate_link_code_async(discord_id: int) -> str:
+    """Összekapcsolási kód generálása a játékosnak."""
+    import random
+    import string
+    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    if db._client:
+        db._client.table("link_codes").upsert({
+            "discord_id": discord_id,
+            "code": code
+        }).execute()
+    return code
+
+async def get_discord_by_minecraft_async(minecraft_name: str) -> int | None:
+    """Discord ID keresése Minecraft név alapján."""
+    if not db._client:
+        return None
+    resp = db._client.table("linked_accounts").select("discord_id").ilike("minecraft_name", minecraft_name).execute()
+    if resp.data:
+        return int(resp.data[0]["discord_id"])
+    return None
