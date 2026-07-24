@@ -213,3 +213,32 @@ async def set_tgf_cooldown(discord_id: int, days: int = 30) -> bool:
         "discord_id": str(discord_id),
         "expires_at": expires_at.isoformat()
     })
+    
+def create_pending_invite(self, discord_id: int, invite_type: str, ticket_channel_id: int) -> dict:
+        resp = self._client.table("pending_invites").insert({
+            "discord_id": discord_id,
+            "invite_type": invite_type,
+            "ticket_channel_id": ticket_channel_id
+        }).execute()
+        return resp.data[0] if resp.data else {}
+
+    def get_pending_invite_for_user(self, discord_id: int) -> list[dict]:
+        resp = self._client.table("pending_invites").select("*").eq("discord_id", discord_id).eq("completed", False).execute()
+        return resp.data or []
+
+    def mark_invite_completed(self, invite_id: str) -> None:
+        self._client.table("pending_invites").update({"completed": True}).eq("id", invite_id).execute()
+
+    def get_due_reminders(self) -> list[dict]:
+        # 24 óránál régebbi, még nem emlékeztetett és nem befejezett 'magas' típusú meghívók
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        resp = self._client.table("pending_invites").select("*") \
+            .eq("invite_type", "magas") \
+            .eq("reminder_sent", False) \
+            .eq("completed", False) \
+            .lte("created_at", cutoff.isoformat()) \
+            .execute()
+        return resp.data or []
+
+    def mark_reminder_sent(self, invite_id: str) -> None:
+        self._client.table("pending_invites").update({"reminder_sent": True}).eq("id", invite_id).execute()
