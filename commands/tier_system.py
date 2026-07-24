@@ -6,16 +6,17 @@ import json
 import time
 import os
 import datetime
+import aiohttp
 from typing import Optional, Literal
 
 from config import (
     TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES,
     REGULATOR_ROLE_ID, STAFF_ROLE_ID, TIER_RESULTS_CHANNEL_ID,
-    ELO_TICKET_CATEGORY_ID, LEGACY_TICKET_CATEGORY_ID
+    ELO_TICKET_CATEGORY_ID, LEGACY_TICKET_CATEGORY_ID,
+    get_gamemode_display_name, POINTS
 )
 from commands.ban_enforcement import is_banned_by_role
-from config import get_gamemode_display_name, POINTS
-from database import get_linked_minecraft_name_async, supabase_select, supabase_update, supabase_insert
+from database import get_linked_minecraft_name_async, supabase_select, get_session, supabase_headers, SUPABASE_URL
 
 # ==========================================
 # ADATTÁROLÓK & CONSTANSOK
@@ -36,6 +37,35 @@ MODE_COLORS = {
 
 VALID_HT_TIERS = ["LT3", "HT3", "LT2", "HT2", "LT1", "HT1", "RLT2", "RHT2", "RLT1", "RHT1"]
 ALLOWED_QUEUE_TIERS = ["UNRANKED", "LT5", "HT5", "LT4", "HT4", "LT3"]
+
+# ==========================================
+# SUPABASE HELPER MŰVELETEK (UPSERT/UPDATE/INSERT)
+# ==========================================
+async def save_test_result_supabase(username: str, gamemode_display: str, rank: str, points: int, existing_id: Optional[int] = None):
+    """Beszúrja vagy frissíti a teszt eredményét a Supabase 'tests' táblában."""
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    session = await get_session()
+    headers = supabase_headers()
+    
+    payload = {
+        "username": username,
+        "gamemode": gamemode_display,
+        "rank": rank,
+        "points": points,
+        "created_at": now
+    }
+    
+    try:
+        if existing_id:
+            url = f"{SUPABASE_URL}/rest/v1/tests?id=eq.{existing_id}"
+            async with session.patch(url, headers=headers, json=payload) as resp:
+                pass
+        else:
+            url = f"{SUPABASE_URL}/rest/v1/tests"
+            async with session.post(url, headers=headers, json=payload) as resp:
+                pass
+    except Exception as e:
+        print(f"[ERROR] Supabase mentési hiba: {e}")
 
 # ==========================================
 # SEGÉDFÜGGVÉNYEK
@@ -151,17 +181,7 @@ class TierResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
             if gmode == mode_display.lower():
                 existing_id = t.get("id")
 
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        payload = {
-            "username": self.player_mc,
-            "gamemode": mode_display,
-            "rank": new_tier,
-            "points": pts,
-            "created_at": now
-        }
-
-        if existing_id: await supabase_update("tests", payload, {"id": existing_id})
-        else: await supabase_insert("tests", payload)
+        await save_test_result_supabase(self.player_mc, mode_display, new_tier, pts, existing_id)
 
         user_tiers[mode_display.lower()] = new_tier
 
@@ -574,7 +594,6 @@ class OpenQueueButton(discord.ui.Button):
         category = get_ticket_category(interaction.guild, self.mode_key) or interaction.channel.category
         ch_name = f"⏳-{self.mode_label.lower().replace(' ', '-')}"
 
-        # Új Queue csatorna létrehozása dinamikusan
         try:
             queue_chan = await interaction.guild.create_text_channel(
                 name=ch_name,
