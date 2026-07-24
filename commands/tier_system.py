@@ -177,8 +177,8 @@ class TierResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
         mode_display = get_gamemode_display_name(self.gamemode)
         pts = POINTS.get(new_tier, 0)
         
-        # Fixed: passing table name, column, and match value separately
-        player_tests = await supabase_select("tests", "username", self.player_mc)
+        # Fixed: supabase_select is synchronous (no await)
+        player_tests = supabase_select("tests", "username", self.player_mc)
         existing_id = None
         user_tiers = {}
         for t in player_tests:
@@ -492,8 +492,8 @@ class HTRequestButton(discord.ui.Button):
         if not mc_name:
             return await interaction.followup.send("❌ Nincs Minecraft fiókod linkelve!", ephemeral=True)
 
-        # Fixed: passing table name, column, and match value separately
-        player_tests = await supabase_select("tests", "username", mc_name)
+        # Fixed: supabase_select is synchronous (no await)
+        player_tests = supabase_select("tests", "username", mc_name)
         mode_display = get_gamemode_display_name(self.mode_key)
         
         current_tier = "Unranked"
@@ -714,7 +714,7 @@ class TierSystemCog(commands.Cog):
         embed = discord.Embed(
             title="**Magas tier teszt igénylés**",
             description=(
-                "HT3 vagy magasabb teszthez nyiss magas tier kérelmet. A megnyitás előtt elkérem és ellenőrzöm az eredeti Minecraft nevedet.\n\n"
+                "HT3 vagy magasabb teszthez nyiss magas tier kérelmet. A megnyitás előtt elkérem és ellenőrizöm az eredeti Minecraft nevedet.\n\n"
                 "**Fontos**\nMagas tier kérelemből egyszerre legfeljebb 12 nyitott lehet.\n\n"
                 "**Automatikus lezárás**\nBármilyen emberi üzenet újraindítja a 48 órás inaktivitási számlálót. Automatikus zárás előtt 4 órával figyelmeztetést küldök és megpingelem a nyitót."
             ),
