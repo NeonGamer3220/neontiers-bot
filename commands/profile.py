@@ -8,14 +8,12 @@ from discord import app_commands
 from discord.ext import commands
 
 from config import (
-    config,
     get_gamemode_display_name,
     get_gamemode_indicator,
     normalize_gamemode,
 )
 from database import (
     arun,
-    db,
     get_linked_minecraft_name_async,
     supabase_select,
 )
@@ -49,10 +47,11 @@ class ProfileCog(commands.Cog):
                 )
             return
 
-        # 2. Tesztek/Eredmények lekérése a Supabase-ből (JAVÍTOTT SOR!)
-        # Külön adjuk át a táblát, az oszlopnevet és az értéket
+        # 2. Tesztek lekérése Minecraft név és Discord ID alapján is
         try:
             user_tests = await arun(supabase_select, "tests", "username", mc_name)
+            if not user_tests:
+                user_tests = await arun(supabase_select, "tests", "discord_id", str(discord_id))
         except Exception as exc:
             log.error("Hiba a profil tesztjeinek lekérésekor: %s", exc)
             user_tests = []
@@ -69,7 +68,7 @@ class ProfileCog(commands.Cog):
         if user_tests:
             formatted_results = []
             for test in user_tests:
-                mode = test.get("gamemode") or test.get("mode", "Ismeretlen")
+                mode = test.get("gamemode") or test.get("mode") or test.get("game_mode", "Ismeretlen")
                 rank = test.get("rank") or test.get("tier", "Unranked")
                 
                 norm_mode = normalize_gamemode(mode)
