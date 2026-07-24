@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from config import config
 
-# Logging beállítások
+# Logging beállítása
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -20,7 +20,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("neontiers.main")
 
-# Betöltendő cogs/extenziók listája
+# Betöltendő cogs/extenziók listája (commands.panels ELTÁVOLÍTVA)
 INITIAL_EXTENSIONS = [
     "commands.profile",
     "commands.linking",
@@ -34,7 +34,7 @@ INITIAL_EXTENSIONS = [
     "commands.send_message",
 ]
 
-# Discord Bot Intents
+# Discord Bot Intents beállítása
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -48,9 +48,14 @@ async def on_ready():
     log.info("Fő bot elindult: %s (ID: %s)", bot.user, bot.user.id)
     
     try:
-        # Frissítjük a parancsfa szinkronizálását, hogy a Discord kliens megkapja a helyes szignatúrákat
+        # 1. Megtisztítjuk az esetleges szerver-szintű (Guild) parancsduplázódásokat
+        for guild in bot.guilds:
+            bot.tree.clear_commands(guild=guild)
+            await bot.tree.sync(guild=guild)
+        
+        # 2. Szinkronizáljuk a globális parancsokat
         synced = await bot.tree.sync()
-        log.info("Sikeresen szinkronizálva %d parancs a szerverre.", len(synced))
+        log.info("Sikeresen megtisztítva és szinkronizálva %d globális parancs.", len(synced))
     except Exception as exc:
         log.error("Hiba a parancsok szinkronizálásakor: %s", exc)
 
@@ -65,7 +70,7 @@ async def main():
             except Exception as exc:
                 log.error("Hiba a(z) %s extenzió betöltésekor: %s", ext, exc)
 
-        # Bot indítása
+        # Bot indítása a token használatával
         token = os.getenv("DISCORD_TOKEN") or getattr(config, "DISCORD_TOKEN", None)
         if not token:
             log.critical("Nincs beállítva DISCORD_TOKEN a környezeti változók között!")
