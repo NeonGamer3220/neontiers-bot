@@ -51,7 +51,7 @@ class ProfileCog(commands.Cog):
                 )
             return
 
-        # 2. Tesztek lekérése közvetlenül a `tests` táblából (kis-/nagybetű függetlenül)
+        # 2. Tesztek lekérése a `tests` táblából
         user_tests = []
         if db._client:
             try:
@@ -77,27 +77,31 @@ class ProfileCog(commands.Cog):
 
         if user_tests:
             for test in user_tests:
-                # Elvonatkoztatott/visszavont tesztek kiszűrése
                 if test.get("retired"):
                     continue
 
                 mode = test.get("gamemode", "Ismeretlen")
                 rank = test.get("rank", "Unranked")
                 
+                # Normalizálás és Stick Fight külön kezelése
                 norm_mode = normalize_gamemode(mode)
-                display_name = get_gamemode_display_name(norm_mode)
+                if norm_mode.lower() in ["stick fight", "stickfight"]:
+                    norm_mode = "stickfight"
+                    display_name = "Stick Fight"
+                else:
+                    display_name = get_gamemode_display_name(norm_mode)
+
                 indicator = get_gamemode_indicator(norm_mode)
 
-                # Formázott sor az ikonnal és megnevezéssel
                 entry = f"{indicator} **{display_name}:** `{rank}`"
 
-                # Különválasztás: Legacy vagy Modern játékmód
+                # Különválasztás: Legacy vagy Modern
                 if norm_mode in LEGACY_KEYS:
                     legacy_results.append(entry)
                 else:
                     modern_results.append(entry)
 
-        # Modern eredmények megjelenítése (új sorokkal elválasztva)
+        # Modern eredmények mező
         if modern_results:
             embed.add_field(
                 name="📊 Modern Tier Eredmények",
@@ -111,11 +115,17 @@ class ProfileCog(commands.Cog):
                 inline=False
             )
 
-        # Legacy eredmények megjelenítése (ha vannak)
+        # Legacy eredmények mező (mindig megjelenik)
         if legacy_results:
             embed.add_field(
                 name="📜 Legacy Tier Eredmények",
                 value="\n".join(legacy_results)[:1024],
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="📜 Legacy Tier Eredmények",
+                value="*Nincsenek rögzített legacy eredmények.*",
                 inline=False
             )
 
