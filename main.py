@@ -31,7 +31,8 @@ INITIAL_EXTENSIONS = [
     "commands.spin",
     "commands.support_ticket",
     "commands.notifications",
-    "commands.panels",  # Az új queuepanel, highticketpanel és pingpanel modul
+    "commands.panels",
+    "commands.send_message",  # A különálló sendmessage modul
 ]
 
 # Discord Bot Intents beállítása
