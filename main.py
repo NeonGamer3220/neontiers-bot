@@ -4,10 +4,12 @@ NeonTiers Main Bot - main.py
 - /sendmessage parancs (Magas teszt & Tournament értesítések)
 - Automatikus ticket-hozzáadás belépéskor
 - 24 órás emlékeztető háttérfolyamat
+- Dinamikus Cog/Command betöltés a commands/ mappából
 """
 
 from __future__ import annotations
 
+import os
 import logging
 import sys
 import discord
@@ -25,7 +27,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("neontiers.main")
 
-# Bot Intention-ök beállítása (SERVER MEMBERS INTENT SZÜKSÉGES)
+# Bot Intention-ök beállítása
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -51,6 +53,23 @@ TEXT_TOURNAMENT = (
     "automatikusan hozzáad a tournament ticketedhez!\n"
     f"Csatlakozás: {INVITE_LINK}"
 )
+
+# ======================================================================
+# COMMANDS MAPPA AUTOMATIKUS BETÖLTÉSE (SETUP HOOK)
+# ======================================================================
+
+@bot.event
+async def setup_hook() -> None:
+    """Automatikusan betölti az összes Python fájlt a commands/ mappából."""
+    if os.path.exists("commands"):
+        for filename in os.listdir("commands"):
+            if filename.endswith(".py") and not filename.startswith("__"):
+                extension = f"commands.{filename[:-3]}"
+                try:
+                    await bot.load_extension(extension)
+                    log.info("Sikeresen betöltve az extenzió: %s", extension)
+                except Exception as exc:
+                    log.error("Hiba a(z) %s extenzió betöltésekor: %s", extension, exc)
 
 # ======================================================================
 # BOT ESEMÉNYEK (EVENTS)
@@ -88,7 +107,6 @@ async def on_member_join(member: discord.Member) -> None:
             channel = member.guild.get_channel(channel_id)
 
             if isinstance(channel, discord.TextChannel):
-                # Olvasási és írási jog megadása a belépő játékosnak
                 await channel.set_permissions(member, read_messages=True, send_messages=True)
                 
                 embed = discord.Embed(
@@ -98,7 +116,6 @@ async def on_member_join(member: discord.Member) -> None:
                 )
                 await channel.send(content=f"🔔 <@{member.id}>", embed=embed)
                 
-                # Befejezettnek jelöljük az adatbázisban
                 await arun(db.mark_invite_completed, invite["id"])
                 log.info("Játékos (%s) sikeresen hozzáadva a tickethez (%s).", member.id, channel.id)
     except Exception as exc:
@@ -151,7 +168,6 @@ async def sendmessage_cmd(
 
     msg_text = TEXT_MAGAS if type.value == "magas" else TEXT_TOURNAMENT
 
-    # DM üzenet kiküldése
     dm_sent = False
     try:
         user = await bot.fetch_user(target_id)
@@ -161,7 +177,6 @@ async def sendmessage_cmd(
     except Exception as exc:
         log.warning("Nem sikerült DM-et küldeni a felhasználónak (%s): %s", target_id, exc)
 
-    # Rögzítés a Supabase adatbázisban
     await arun(db.create_pending_invite, target_id, type.value, ticket.id)
 
     status_msg = "✅ DM üzenet elküldve" if dm_sent else "⚠️ DM üzenet nem küldhető el (zárt DM)"
@@ -192,7 +207,7 @@ async def syncguild_cmd(interaction: discord.Interaction) -> None:
 
 def main() -> None:
     if not config.bot_token:
-        log.critical("A DISCORD_BOT_TOKEN hiányzik a konfigurációból!")
+        log.critical("A DISCORD_BOT_TOKEN / DISCORD_TOKEN hiányzik a konfigurációból!")
         sys.exit(1)
     
     bot.run(config.bot_token)
