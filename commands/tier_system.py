@@ -177,6 +177,7 @@ class TierResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
         mode_display = get_gamemode_display_name(self.gamemode)
         pts = POINTS.get(new_tier, 0)
         
+        # Fixed: passing table name, column, and match value separately
         player_tests = await supabase_select("tests", "username", self.player_mc)
         existing_id = None
         user_tiers = {}
@@ -491,7 +492,8 @@ class HTRequestButton(discord.ui.Button):
         if not mc_name:
             return await interaction.followup.send("❌ Nincs Minecraft fiókod linkelve!", ephemeral=True)
 
-        player_tests = await supabase_select("tests", {"username": mc_name})
+        # Fixed: passing table name, column, and match value separately
+        player_tests = await supabase_select("tests", "username", mc_name)
         mode_display = get_gamemode_display_name(self.mode_key)
         
         current_tier = "Unranked"
