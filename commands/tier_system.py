@@ -177,7 +177,7 @@ class TierResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
         mode_display = get_gamemode_display_name(self.gamemode)
         pts = POINTS.get(new_tier, 0)
         
-        player_tests = await supabase_select("tests", {"username": self.player_mc})
+        player_tests = await supabase_select("tests", "username", self.player_mc)
         existing_id = None
         user_tiers = {}
         for t in player_tests:
