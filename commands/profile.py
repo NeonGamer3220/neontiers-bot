@@ -15,13 +15,13 @@ from config import (
 )
 from database import (
     arun,
+    db,
     get_linked_minecraft_name_async,
-    supabase_select,
 )
 
 log = logging.getLogger("neontiers.commands.profile")
 
-# Legacy játékmód kulcsok gyűjteménye a szétválasztáshoz
+# Legacy játékmódok kulcsai a szétválasztáshoz
 LEGACY_KEYS = {key.lower() for _, key, _ in LEGACY_TICKET_TYPES}
 
 
@@ -51,31 +51,18 @@ class ProfileCog(commands.Cog):
                 )
             return
 
-        # 2. Tesztek lekérése (sima 'tests' és 'legacy_tests' táblákból is)
+        # 2. Tesztek lekérése közvetlenül a `tests` táblából (kis-/nagybetű függetlenül)
         user_tests = []
-        try:
-            # Sima tesztek lekérése név és discord_id alapján
-            tests_by_name = await arun(supabase_select, "tests", "username", mc_name)
-            tests_by_id = await arun(supabase_select, "tests", "discord_id", str(discord_id))
-            
-            # Ha van külön legacy_tests tábla, azt is lekérjük
-            legacy_by_name = await arun(supabase_select, "legacy_tests", "username", mc_name)
-            legacy_by_id = await arun(supabase_select, "legacy_tests", "discord_id", str(discord_id))
+        if db._client:
+            try:
+                def fetch_tests():
+                    # ilike használsatával nem számít a kis/nagybetű!
+                    resp = db._client.table("tests").select("*").ilike("username", mc_name).execute()
+                    return resp.data or []
 
-            # Összevonás és duplikációk kiszűrése
-            all_records = (tests_by_name or []) + (tests_by_id or []) + (legacy_by_name or []) + (legacy_by_id or [])
-            
-            seen = set()
-            for item in all_records:
-                item_id = item.get("id")
-                if item_id and item_id in seen:
-                    continue
-                if item_id:
-                    seen.add(item_id)
-                user_tests.append(item)
-
-        except Exception as exc:
-            log.error("Hiba a profil tesztjeinek lekérésekor: %s", exc)
+                user_tests = await arun(fetch_tests)
+            except Exception as exc:
+                log.error("Hiba a 'tests' tábla lekérésekor: %s", exc)
 
         # 3. Embed összeállítása
         embed = discord.Embed(
@@ -91,8 +78,12 @@ class ProfileCog(commands.Cog):
 
         if user_tests:
             for test in user_tests:
-                mode = test.get("gamemode") or test.get("mode") or test.get("game_mode", "Ismeretlen")
-                rank = test.get("rank") or test.get("tier", "Unranked")
+                # Ha el van vonva (retired), kihagyjuk
+                if test.get("retired"):
+                    continue
+
+                mode = test.get("gamemode", "Ismeretlen")
+                rank = test.get("rank", "Unranked")
                 
                 norm_mode = normalize_gamemode(mode)
                 display_name = get_gamemode_display_name(norm_mode)
@@ -106,7 +97,7 @@ class ProfileCog(commands.Cog):
                 else:
                     modern_results.append(entry)
 
-        # Modern Tesztek Mező
+        # Modern eredmények megjelenítése
         if modern_results:
             embed.add_field(
                 name="📊 Modern Tier Eredmények",
@@ -120,7 +111,7 @@ class ProfileCog(commands.Cog):
                 inline=False
             )
 
-        # Legacy Tesztek Mező (Külön kiemelve!)
+        # Legacy eredmények megjelenítése
         if legacy_results:
             embed.add_field(
                 name="📜 Legacy Tier Eredmények",
