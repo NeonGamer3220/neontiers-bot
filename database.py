@@ -239,3 +239,7 @@ async def get_discord_by_minecraft_async(minecraft_name: str) -> int | None:
     if resp.data:
         return int(resp.data[0]["discord_id"])
     return None
+
+async def unlink_minecraft_account_async(discord_id: int) -> bool:
+    """Fiók szétkapcsolása aszinkron módon."""
+    return await arun(db.unlink_account, discord_id)
