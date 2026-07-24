@@ -54,6 +54,12 @@ COOLDOWN_SECONDS = 14 * 24 * 60 * 60
 DATA_FILE = "data.json"
 TESTS_TABLE = "tests"
 
+# A Modern (ELO) queue/teszt csatornák kategóriája:
+ELO_TICKET_CATEGORY_ID = 1478400462225936496
+
+# A Legacy queue/teszt csatornák kategóriája:
+LEGACY_TICKET_CATEGORY_ID = 1520384820612567202
+
 # Linkelés beállítások
 LINK_CODE_LENGTH = 8
 LINK_CODE_EXPIRY_MINUTES = 10
