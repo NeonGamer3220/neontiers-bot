@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from config import (
+    LEGACY_TICKET_TYPES,
     get_gamemode_display_name,
     get_gamemode_indicator,
     normalize_gamemode,
@@ -19,6 +20,9 @@ from database import (
 )
 
 log = logging.getLogger("neontiers.commands.profile")
+
+# Legacy játékmód kulcsok gyűjteménye a szétválasztáshoz
+LEGACY_KEYS = {key.lower() for _, key, _ in LEGACY_TICKET_TYPES}
 
 
 class ProfileCog(commands.Cog):
@@ -47,14 +51,31 @@ class ProfileCog(commands.Cog):
                 )
             return
 
-        # 2. Tesztek lekérése Minecraft név és Discord ID alapján is
+        # 2. Tesztek lekérése (sima 'tests' és 'legacy_tests' táblákból is)
+        user_tests = []
         try:
-            user_tests = await arun(supabase_select, "tests", "username", mc_name)
-            if not user_tests:
-                user_tests = await arun(supabase_select, "tests", "discord_id", str(discord_id))
+            # Sima tesztek lekérése név és discord_id alapján
+            tests_by_name = await arun(supabase_select, "tests", "username", mc_name)
+            tests_by_id = await arun(supabase_select, "tests", "discord_id", str(discord_id))
+            
+            # Ha van külön legacy_tests tábla, azt is lekérjük
+            legacy_by_name = await arun(supabase_select, "legacy_tests", "username", mc_name)
+            legacy_by_id = await arun(supabase_select, "legacy_tests", "discord_id", str(discord_id))
+
+            # Összevonás és duplikációk kiszűrése
+            all_records = (tests_by_name or []) + (tests_by_id or []) + (legacy_by_name or []) + (legacy_by_id or [])
+            
+            seen = set()
+            for item in all_records:
+                item_id = item.get("id")
+                if item_id and item_id in seen:
+                    continue
+                if item_id:
+                    seen.add(item_id)
+                user_tests.append(item)
+
         except Exception as exc:
             log.error("Hiba a profil tesztjeinek lekérésekor: %s", exc)
-            user_tests = []
 
         # 3. Embed összeállítása
         embed = discord.Embed(
@@ -65,8 +86,10 @@ class ProfileCog(commands.Cog):
         embed.add_field(name="Discord azonosító", value=target_user.mention, inline=True)
         embed.add_field(name="Minecraft név", value=f"`{mc_name}`", inline=True)
 
+        modern_results = []
+        legacy_results = []
+
         if user_tests:
-            formatted_results = []
             for test in user_tests:
                 mode = test.get("gamemode") or test.get("mode") or test.get("game_mode", "Ismeretlen")
                 rank = test.get("rank") or test.get("tier", "Unranked")
@@ -75,21 +98,33 @@ class ProfileCog(commands.Cog):
                 display_name = get_gamemode_display_name(norm_mode)
                 indicator = get_gamemode_indicator(norm_mode)
 
-                formatted_results.append(f"{indicator} **{display_name}:** `{rank}`")
+                entry = f"{indicator} **{display_name}:** `{rank}`"
 
-            results_text = "\n".join(formatted_results)
-            if len(results_text) > 1024:
-                results_text = results_text[:1020] + "..."
+                # Különválasztás: Legacy vagy Modern játékmód
+                if norm_mode in LEGACY_KEYS:
+                    legacy_results.append(entry)
+                else:
+                    modern_results.append(entry)
 
+        # Modern Tesztek Mező
+        if modern_results:
             embed.add_field(
-                name="📊 Tier Teszt Eredmények",
-                value=results_text,
+                name="📊 Modern Tier Eredmények",
+                value="\n".join(modern_results)[:1024],
                 inline=False
             )
         else:
             embed.add_field(
-                name="📊 Tier Teszt Eredmények",
-                value="*Még nincsenek rögzített eredmények.*",
+                name="📊 Modern Tier Eredmények",
+                value="*Nincsenek rögzített modern eredmények.*",
+                inline=False
+            )
+
+        # Legacy Tesztek Mező (Külön kiemelve!)
+        if legacy_results:
+            embed.add_field(
+                name="📜 Legacy Tier Eredmények",
+                value="\n".join(legacy_results)[:1024],
                 inline=False
             )
 
