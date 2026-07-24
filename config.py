@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
-# .env fájl betöltése (ha létezik helyileg)
+# .env fájl betöltése (helyi teszteléshez)
 load_dotenv()
 
 
@@ -23,10 +23,10 @@ def _get_int(env_name: str, default: int) -> int:
 
 @dataclass
 class Config:
-    # Discord Bot Token
-    bot_token: str = os.getenv("DISCORD_BOT_TOKEN", "")
+    # Discord Bot Token (elfogadja a DISCORD_TOKEN-t és a DISCORD_BOT_TOKEN-t is)
+    bot_token: str = os.getenv("DISCORD_TOKEN") or os.getenv("DISCORD_BOT_TOKEN", "")
 
-    # Szerver és Csatorna ID-k (cseréld ki a sajátjaidra, ha nincsenek .env-ben)
+    # Szerver és Csatorna ID-k
     guild_id: int = _get_int("GUILD_ID", 123456789012345678)
     ticket_category_id: int = _get_int("TICKET_CATEGORY_ID", 0)
     results_channel_id: int = _get_int("RESULTS_CHANNEL_ID", 0)
@@ -41,6 +41,6 @@ class Config:
 
 
 # ======================================================================
-# EZ A SOR HIÁNYZOTT: Létrehozzuk a 'config' kisbetűs példányt!
+# Globális 'config' példány létrehozása a main.py és database.py számára
 # ======================================================================
 config = Config()
