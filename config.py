@@ -139,19 +139,32 @@ GAMEMODE_DISPLAY_NAMES = {
 }
 
 GAMEMODE_INDICATORS = {
-    "mace": "<:mace:1489190873777438791>", "sword": "<:sword:1489190989150163034>",
-    "vanilla": "<:vanilla:1489191023308574730>", "uhc": "<:uhc:1489191005902209134>",
-    "pot": "<:pot:1489190923333013597>", "nethpot": "<:nethpot:1489190890550464543>",
-    "smp": "<:smp:1489190957306871938>", "axe": "<:axe:1489190775085338817>",
-    "cart": "<:cart:1489190821390581860>", "creeper": "<:creeper:1489190838763393104>",
-    "diasmp": "<:diasmp:1489190856903757884>", "ogvanilla": "<:ogvanilla:1489190908477046804>",
+    "mace": "<:mace:1489190873777438791>", 
+    "sword": "<:sword:1489190989150163034>",
+    "vanilla": "<:vanilla:1489191023308574730>", 
+    "uhc": "<:uhc:1489191005902209134>",
+    "pot": "<:pot:1489190923333013597>", 
+    "nethpot": "<:nethpot:1489190890550464543>",
+    "smp": "<:smp:1489190957306871938>", 
+    "axe": "<:axe:1489190775085338817>",
+    "cart": "<:cart:1489190821390581860>", 
+    "creeper": "<:creeper:1489190838763393104>",
+    "diasmp": "<:diasmp:1489190856903757884>", 
+    "ogvanilla": "<:ogvanilla:1489190908477046804>",
     "shieldlessuhc": "<:shieldlessuhc:1489190941872095292>", 
-    "spearmace": "<:spearmace:148919073400416359>", "spearelytra": "<:spearelytra:1489190973400416359>",
-    "stickfight": "<:stickfight:1502574877536948334>", "stick fight": "<:stickfight:1502574877536948334>", 
+    "spearmace": "<:spearelytra:1489190973400416359>",  # Javított Spear emoji ID
+    "spearelytra": "<:spearelytra:1489190973400416359>",
+    "spear": "<:spearelytra:1489190973400416359>",      # Sima 'spear' alias
+    "stickfight": "<:stickfight:1502574877536948334>", 
+    "stick fight": "<:stickfight:1502574877536948334>", 
     "trident": "<:trident:1505194733629210664>",
-    "boxing": "<:Boxing:1520465463358783639>", "combo": "<:Combo:1520465407474008147>",
-    "bridge": "<:Bridge:1520465430957916331>", "nodebuff": "<:NoDebuff:1520465050974814319>",
-    "op": "<:OP:1520465323680075937>", "soup": "<:Soup:1520465218096857280>", 
+    # Legacy módok
+    "boxing": "<:Boxing:1520465463358783639>", 
+    "combo": "<:Combo:1520465407474008147>",
+    "bridge": "<:Bridge:1520465430957916331>", 
+    "nodebuff": "<:NoDebuff:1520465050974814319>",
+    "op": "<:OP:1520465323680075937>", 
+    "soup": "<:Soup:1520465218096857280>", 
     "fireballfight": "<:FireballFight:1520465183884181636>"
 }
 
