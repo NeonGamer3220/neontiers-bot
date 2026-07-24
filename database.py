@@ -1,236 +1,222 @@
-import discord
-import os
-import json
-import time
+"""
+NeonTiers Bot - Database Modul
+Supabase / PostgreSQL adatbázis műveletek és aszinkron futtatás.
+"""
+
+from __future__ import annotations
+
 import asyncio
-import datetime
-import random
-import string
-from typing import Dict, Any, Optional, List, Set
-import aiohttp
+import logging
+from datetime import datetime, timezone, timedelta
+from typing import Any, Callable, TypeVar
 
-from config import (
-    SUPABASE_URL, SUPABASE_KEY, USE_SUPABASE_API, WEBSITE_URL, BOT_API_KEY,
-    HTTP_TIMEOUT_SECONDS, LINK_CODE_LENGTH, LINK_CODE_EXPIRY_MINUTES,
-    normalize_gamemode, get_gamemode_display_name
-)
+from supabase import Client, create_client
+from config import config
 
-# Globális HTTP Session az "Unclosed connection" hibák ellen
-http_session: Optional[aiohttp.ClientSession] = None  
+log = logging.getLogger("neontiers.database")
 
-async def get_session() -> aiohttp.ClientSession:
-    global http_session
-    if http_session is None or http_session.closed:
-        connector = aiohttp.TCPConnector(limit=100, force_close=False)
-        http_session = aiohttp.ClientSession(
-            connector=connector,
-            timeout=aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS)
-        )
-    return http_session
+T = TypeVar("T")
 
-def supabase_headers() -> Dict[str, str]:
-    return {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation"
-    }
 
-async def init_db():
-    print("[DATABASE] Adatbázis modul inicializálva.")
+async def arun(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    """Segédfüggvény: Szinkron Supabase hívások futtatása aszinkron módon."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
 
-async def close_db():
-    global http_session
-    if http_session and not http_session.closed:
-        await http_session.close()
-        print("[DATABASE] HTTP session lezárva.")
 
-# ==========================================
-# OPTIMALIZÁLT SUPABASE API FUNKCIÓK
-# ==========================================
-async def supabase_select(table: str, filters: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        print("[DATABASE ERROR] Supabase URL vagy KEY hiányzik.")
-        return []
+class Database:
+    def __init__(self) -> None:
+        self._client: Client | None = None
+        self._init_client()
 
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    params = {}
-    if filters:
-        for k, v in filters.items():
-            params[k] = f"eq.{v}"
+    def _init_client(self) -> None:
+        """Supabase kliens inicializálása a config adatai alapján."""
+        if config.supabase_url and config.supabase_key:
+            try:
+                self._client = create_client(config.supabase_url, config.supabase_key)
+                log.info("Supabase adatbázis kapcsolat sikeresen kiépítve.")
+            except Exception as exc:
+                log.error("Hiba a Supabase kliens létrehozásakor: %s", exc)
+                self._client = None
+        else:
+            log.warning("Supabase URL vagy Key hiányzik a konfigurációból!")
 
-    session = await get_session()
-    try:
-        async with session.get(url, headers=supabase_headers(), params=params) as resp:
-            if resp.status == 200:
-                return await resp.json()
-            else:
-                err_body = await resp.text()
-                print(f"[SUPABASE SELECT ERROR] {resp.status} - {err_body}")
-                return []
-    except Exception as e:
-        print(f"[SUPABASE SELECT EXCEPTION] {e}")
-        return []
+    # ==========================================
+    # LINKED ACCOUNTS (FIÓK ÖSSZEKAPCSOLÁS)
+    # ==========================================
 
-async def supabase_insert(table: str, data: Dict[str, Any]) -> bool:
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        return False
+    def get_linked_account(self, discord_id: int) -> dict | None:
+        """Lekéri a játékos összekapcsolt fiókját Discord ID alapján."""
+        if not self._client:
+            return None
+        resp = self._client.table("linked_accounts").select("*").eq("discord_id", discord_id).execute()
+        return resp.data[0] if resp.data else None
 
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    session = await get_session()
-    try:
-        async with session.post(url, headers=supabase_headers(), json=data) as resp:
-            return resp.status in (200, 201)
-    except Exception as e:
-        print(f"[SUPABASE INSERT ERROR] {e}")
-        return False
+    def link_account(self, discord_id: int, minecraft_name: str, uuid: str = "") -> dict:
+        """Összekapcsol egy Discord fiókot egy Minecraft névvel."""
+        if not self._client:
+            return {}
+        data = {
+            "discord_id": discord_id,
+            "minecraft_name": minecraft_name,
+            "uuid": uuid,
+            "linked_at": datetime.now(timezone.utc).isoformat()
+        }
+        resp = self._client.table("linked_accounts").upsert(data, on_conflict="discord_id").execute()
+        return resp.data[0] if resp.data else {}
 
-async def supabase_update(table: str, filters: Dict[str, str], data: Dict[str, Any]) -> bool:
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        return False
+    def unlink_account(self, discord_id: int) -> bool:
+        """Törli az összekapcsolást."""
+        if not self._client:
+            return False
+        resp = self._client.table("linked_accounts").delete().eq("discord_id", discord_id).execute()
+        return bool(resp.data)
 
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    params = {k: f"eq.{v}" for k, v in filters.items()}
-    session = await get_session()
-    try:
-        async with session.patch(url, headers=supabase_headers(), params=params, json=data) as resp:
-            return resp.status in (200, 204)
-    except Exception as e:
-        print(f"[SUPABASE UPDATE ERROR] {e}")
-        return False
+    # ==========================================
+    # TOURNAMENTS & MATCHES (BAJNOKSÁG)
+    # ==========================================
 
-async def supabase_delete(table: str, filters: Dict[str, str]) -> bool:
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        return False
+    def create_tournament(
+        self,
+        name: str,
+        end_time: datetime,
+        queue_message_id: int,
+        guild_id: int,
+        ticket_category_id: int,
+        results_channel_id: int,
+        regulator_role_id: int
+    ) -> dict:
+        """Új bajnokság létrehozása."""
+        if not self._client:
+            return {}
+        data = {
+            "name": name,
+            "status": "pending",
+            "end_time": end_time.isoformat(),
+            "queue_message_id": queue_message_id,
+            "guild_id": guild_id,
+            "ticket_category_id": ticket_category_id,
+            "results_channel_id": results_channel_id,
+            "regulator_role_id": regulator_role_id,
+            "current_round": 0
+        }
+        resp = self._client.table("tournaments").insert(data).execute()
+        return resp.data[0] if resp.data else {}
 
-    url = f"{SUPABASE_URL}/rest/v1/{table}"
-    params = {k: f"eq.{v}" for k, v in filters.items()}
-    session = await get_session()
-    try:
-        async with session.delete(url, headers=supabase_headers(), params=params) as resp:
-            return resp.status in (200, 204)
-    except Exception as e:
-        print(f"[SUPABASE DELETE ERROR] {e}")
-        return False
+    def get_tournament(self, tournament_id: str) -> dict | None:
+        """Bajnokság lekérése ID alapján."""
+        if not self._client:
+            return None
+        resp = self._client.table("tournaments").select("*").eq("id", tournament_id).execute()
+        return resp.data[0] if resp.data else None
 
-# ==========================================
-# INSTANT UPSERT ELO RÖGZÍTÉS
-# ==========================================
-async def api_post_elo_instant(username: str, mode: str, elo: str, tester: str) -> bool:
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        return False
+    def update_tournament(self, tournament_id: str, **kwargs: Any) -> dict:
+        """Bajnokság adatainak frissítése."""
+        if not self._client:
+            return {}
+        resp = self._client.table("tournaments").update(kwargs).eq("id", tournament_id).execute()
+        return resp.data[0] if resp.data else {}
 
-    url = f"{SUPABASE_URL}/rest/v1/tests"
-    headers = supabase_headers()
-    headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
+    def list_pending_tournaments(self) -> list[dict]:
+        """Lejárt regisztrációjú, indításra váró bajnokságok lekérése."""
+        if not self._client:
+            return []
+        now_iso = datetime.now(timezone.utc).isoformat()
+        resp = self._client.table("tournaments").select("*").eq("status", "pending").lte("end_time", now_iso).execute()
+        return resp.data or []
 
-    payload = {
-        "username": username,
-        "gamemode": mode,
-        "rank": elo,
-        "tester": tester,
-        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-    }
+    def add_tournament_player(self, tournament_id: str, discord_id: int, minecraft_name: str) -> dict:
+        """Játékos hozzáadása a bajnoksághoz."""
+        if not self._client:
+            return {}
+        data = {
+            "tournament_id": tournament_id,
+            "discord_id": discord_id,
+            "minecraft_name": minecraft_name
+        }
+        resp = self._client.table("tournament_players").upsert(data, on_conflict="tournament_id,discord_id").execute()
+        return resp.data[0] if resp.data else {}
 
-    session = await get_session()
-    try:
-        async with session.post(url, headers=headers, json=payload, params={"on_conflict": "username,gamemode"}) as resp:
-            return resp.status in (200, 201, 204)
-    except Exception as e:
-        print(f"[INSTANT ELO POST ERROR] {e}")
-        return False
+    def get_tournament_players(self, tournament_id: str) -> list[dict]:
+        """A bajnokságra regisztrált összes játékos lekérése."""
+        if not self._client:
+            return []
+        resp = self._client.table("tournament_players").select("*").eq("tournament_id", tournament_id).execute()
+        return resp.data or []
 
-# ==========================================
-# MINECRAFT LINKELÉS (linked_accounts & pending_codes)
-# ==========================================
-async def get_linked_minecraft_name_async(discord_id: int) -> Optional[str]:
-    if USE_SUPABASE_API:
-        results = await supabase_select("linked_accounts", {"discord_id": str(discord_id)})
-        if results and len(results) > 0:
-            return results[0].get("minecraft_name")
-    return None
+    def create_match(
+        self,
+        tournament_id: str,
+        round_number: int,
+        player1_discord_id: int,
+        player2_discord_id: int,
+        player1_mc: str,
+        player2_mc: str,
+        ticket_channel_id: int
+    ) -> dict:
+        """Új meccs létrehozása."""
+        if not self._client:
+            return {}
+        data = {
+            "tournament_id": tournament_id,
+            "round_number": round_number,
+            "player1_discord_id": player1_discord_id,
+            "player2_discord_id": player2_discord_id,
+            "player1_mc": player1_mc,
+            "player2_mc": player2_mc,
+            "ticket_channel_id": ticket_channel_id,
+            "winner_discord_id": None
+        }
+        resp = self._client.table("matches").insert(data).execute()
+        return resp.data[0] if resp.data else {}
 
-async def get_discord_by_minecraft_async(minecraft_name: str) -> Optional[int]:
-    if USE_SUPABASE_API:
-        results = await supabase_select("linked_accounts", {"minecraft_name": minecraft_name})
-        if results and len(results) > 0:
-            d_id = results[0].get("discord_id")
-            return int(d_id) if d_id else None
-    return None
+    def get_unresolved_matches(self, tournament_id: str) -> list[dict]:
+        """A bajnokság még le nem zárt meccseinek lekérése."""
+        if not self._client:
+            return []
+        resp = self._client.table("matches").select("*").eq("tournament_id", tournament_id).is_("winner_discord_id", "null").execute()
+        return resp.data or []
 
-async def unlink_minecraft_account_async(discord_id: int) -> bool:
-    if USE_SUPABASE_API:
-        return await supabase_delete("linked_accounts", {"discord_id": str(discord_id)})
-    return False
+    def set_match_winner(self, match_id: str, winner_discord_id: int) -> dict:
+        """Meccs győztesének rögzítése."""
+        if not self._client:
+            return {}
+        resp = self._client.table("matches").update({"winner_discord_id": winner_discord_id}).eq("id", match_id).execute()
+        return resp.data[0] if resp.data else {}
 
-def _generate_random_code(length: int = LINK_CODE_LENGTH) -> str:
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+    # ==========================================
+    # INVITE SYSTEM / PENDING INVITES METÓDUSOK
+    # ==========================================
 
-async def generate_link_code_async(discord_id: int) -> Optional[str]:
-    """Generates a link code for /link and saves it to pending_codes."""
-    code = _generate_random_code()
-    expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=LINK_CODE_EXPIRY_MINUTES)
-    
-    if USE_SUPABASE_API:
-        # Töröljük a korábbi ideiglenes kódokat erről a discord id-ról
-        await supabase_delete("pending_codes", {"discord_id": str(discord_id)})
-        
-        success = await supabase_insert("pending_codes", {
-            "code": code,
-            "discord_id": str(discord_id),
-            "expires_at": expires_at.isoformat()
-        })
-        if success:
-            return code
-    return None
-
-# Sync verziók visszafelé kompatibilitás miatt
-def get_linked_minecraft_name(discord_id: int) -> Optional[str]:
-    try:
-        return asyncio.run(get_linked_minecraft_name_async(discord_id))
-    except Exception:
-        return None
-
-# ==========================================
-# TGF COOLDOWN SYSTEM
-# ==========================================
-async def get_tgf_cooldown(discord_id: int) -> Optional[datetime.datetime]:
-    results = await supabase_select("tgf_cooldowns", {"discord_id": str(discord_id)})
-    if results and len(results) > 0:
-        expires_str = results[0].get("expires_at")
-        if expires_str:
-            expires_dt = datetime.datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
-            if datetime.datetime.now(datetime.timezone.utc) < expires_dt:
-                return expires_dt
-            else:
-                await supabase_delete("tgf_cooldowns", {"discord_id": str(discord_id)})
-    return None
-
-async def set_tgf_cooldown(discord_id: int, days: int = 30) -> bool:
-    expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=days)
-    await supabase_delete("tgf_cooldowns", {"discord_id": str(discord_id)})
-    return await supabase_insert("tgf_cooldowns", {
-        "discord_id": str(discord_id),
-        "expires_at": expires_at.isoformat()
-    })
-    
-def create_pending_invite(self, discord_id: int, invite_type: str, ticket_channel_id: int) -> dict:
-        resp = self._client.table("pending_invites").insert({
+    def create_pending_invite(self, discord_id: int, invite_type: str, ticket_channel_id: int) -> dict:
+        """Új függőben lévő ticket meghívó elmentése."""
+        if not self._client:
+            return {}
+        data = {
             "discord_id": discord_id,
             "invite_type": invite_type,
             "ticket_channel_id": ticket_channel_id
-        }).execute()
+        }
+        resp = self._client.table("pending_invites").insert(data).execute()
         return resp.data[0] if resp.data else {}
 
     def get_pending_invite_for_user(self, discord_id: int) -> list[dict]:
+        """Lekéri a játékos még nem teljesített ticket meghívóit."""
+        if not self._client:
+            return []
         resp = self._client.table("pending_invites").select("*").eq("discord_id", discord_id).eq("completed", False).execute()
         return resp.data or []
 
     def mark_invite_completed(self, invite_id: str) -> None:
+        """Megjelöli a meghívót teljesítettként (belépett a játékos)."""
+        if not self._client:
+            return
         self._client.table("pending_invites").update({"completed": True}).eq("id", invite_id).execute()
 
     def get_due_reminders(self) -> list[dict]:
-        # 24 óránál régebbi, még nem emlékeztetett és nem befejezett 'magas' típusú meghívók
+        """Lekéri a 24 óránál régebbi, még ki nem küldött 'magas' típusú emlékeztetőket."""
+        if not self._client:
+            return []
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         resp = self._client.table("pending_invites").select("*") \
             .eq("invite_type", "magas") \
@@ -241,4 +227,11 @@ def create_pending_invite(self, discord_id: int, invite_type: str, ticket_channe
         return resp.data or []
 
     def mark_reminder_sent(self, invite_id: str) -> None:
+        """Megjelöli az emlékeztetőt elküldöttként."""
+        if not self._client:
+            return
         self._client.table("pending_invites").update({"reminder_sent": True}).eq("id", invite_id).execute()
+
+
+# Globális Adatbázis Példány
+db = Database()
