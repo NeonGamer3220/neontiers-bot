@@ -1,108 +1,103 @@
+"""
+NeonTiers Bot - Profile Parancs (commands/profile.py)
+"""
+
+import logging
 import discord
-from discord.ext import commands
 from discord import app_commands
-import traceback
+from discord.ext import commands
 
-from database import get_linked_minecraft_name_async, supabase_select
-from config import TICKET_TYPES, LEGACY_TICKET_TYPES, GAMEMODE_INDICATORS, normalize_gamemode
+from config import (
+    config,
+    get_gamemode_display_name,
+    get_gamemode_indicator,
+    normalize_gamemode,
+)
+from database import (
+    arun,
+    db,
+    get_linked_minecraft_name_async,
+    supabase_select,
+)
 
-
-def get_emoji_from_config(mode_key: str, fallback_emoji: str) -> str:
-    """
-    Szigorúan kisbetűsített és tisztított kulcs alapján keresi meg az emojit a GAMEMODE_INDICATORS-ban.
-    """
-    # Tisztítjuk a kulcsot: pl. "Spear Elytra" -> "spearelytra"
-    clean_key = mode_key.lower().replace(" ", "").replace("-", "").strip()
-    norm_key = normalize_gamemode(clean_key)
-
-    # 1. Próba a tisztított kulccsal
-    if norm_key in GAMEMODE_INDICATORS:
-        return GAMEMODE_INDICATORS[norm_key]
-    
-    # 2. Próba a szimpla tisztított kulccsal
-    if clean_key in GAMEMODE_INDICATORS:
-        return GAMEMODE_INDICATORS[clean_key]
-
-    # 3. Ha semmi nem nyert, visszaadja a TICKET_TYPES-ból a 3. elemet
-    return fallback_emoji or "⚔️"
+log = logging.getLogger("neontiers.commands.profile")
 
 
 class ProfileCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="profile", description="Nézd meg a saját, vagy más játékos Tier profilját!")
-    @app_commands.describe(user="A játékos, akinek a profilját látni szeretnéd (opcionális)")
-    async def profile(self, interaction: discord.Interaction, user: discord.User = None):
-        await interaction.response.defer(ephemeral=False)
-        
+    @app_commands.command(name="profile", description="Megtekintheted a saját vagy egy másik játékos profilját.")
+    @app_commands.describe(user="A játékos, akinek a profilját meg szeretnéd nézni (opcionális).")
+    async def profile(self, interaction: discord.Interaction, user: discord.User | None = None) -> None:
+        await interaction.response.defer()
+
+        target_user = user or interaction.user
+        discord_id = target_user.id
+
+        # 1. Minecraft név lekérése
+        mc_name = await get_linked_minecraft_name_async(discord_id)
+
+        if not mc_name:
+            if user:
+                await interaction.followup.send(
+                    f"❌ **{target_user.display_name}** nem kapcsolta össze a Discord fiókját egyetlen Minecraft fiókkal sem."
+                )
+            else:
+                await interaction.followup.send(
+                    "❌ Még nem kapcsoltad össze a Discord fiókodat! Használd a `/link` parancsot."
+                )
+            return
+
+        # 2. Tesztek/Eredmények lekérése a Supabase-ből (JAVÍTOTT SOR!)
+        # Külön adjuk át a táblát, az oszlopnevet és az értéket
         try:
-            target_user = user or interaction.user
-            mc_name = await get_linked_minecraft_name_async(target_user.id)
-            
-            if not mc_name:
-                if user:
-                    await interaction.followup.send(f"❌ **{target_user.display_name}** még nem linkelte a Minecraft fiókját!")
-                else:
-                    await interaction.followup.send("❌ Még nem linkelted a Minecraft fiókodat! Használd a `/link` parancsot.")
-                return
+            user_tests = await arun(supabase_select, "tests", "username", mc_name)
+        except Exception as exc:
+            log.error("Hiba a profil tesztjeinek lekérésekor: %s", exc)
+            user_tests = []
 
-            user_tests = await supabase_select("tests", {"username": mc_name})
-            user_tiers = {}
-            
-            if user_tests:
-                for row in user_tests:
-                    gmode = str(row.get("gamemode", "")).lower().replace(" ", "").replace("-", "").strip()
-                    rnk = str(row.get("rank", "Unranked")).strip()
-                    if rnk == "500":
-                        rnk = "Unranked"
-                    user_tiers[gmode] = rnk
+        # 3. Embed összeállítása
+        embed = discord.Embed(
+            title=f"🎮 {mc_name} Profilja",
+            color=discord.Color.blue()
+        )
+        embed.set_thumbnail(url=f"https://mc-heads.net/avatar/{mc_name}/100")
+        embed.add_field(name="Discord azonosító", value=target_user.mention, inline=True)
+        embed.add_field(name="Minecraft név", value=f"`{mc_name}`", inline=True)
 
-            # ===============================
-            # MODERN MÓDOK EMBED
-            # ===============================
-            embed_modern = discord.Embed(
-                title=f"⚔️ {mc_name} Tier Profilja",
-                color=discord.Color.blue()
+        if user_tests:
+            formatted_results = []
+            for test in user_tests:
+                mode = test.get("gamemode") or test.get("mode", "Ismeretlen")
+                rank = test.get("rank") or test.get("tier", "Unranked")
+                
+                norm_mode = normalize_gamemode(mode)
+                display_name = get_gamemode_display_name(norm_mode)
+                indicator = get_gamemode_indicator(norm_mode)
+
+                formatted_results.append(f"{indicator} **{display_name}:** `{rank}`")
+
+            results_text = "\n".join(formatted_results)
+            if len(results_text) > 1024:
+                results_text = results_text[:1020] + "..."
+
+            embed.add_field(
+                name="📊 Tier Teszt Eredmények",
+                value=results_text,
+                inline=False
             )
-            embed_modern.set_thumbnail(url=f"https://minotar.net/helm/{mc_name}/256.png")
-            embed_modern.add_field(name="───────────────", value="**🔥 MODERN MÓDOK**", inline=False)
+        else:
+            embed.add_field(
+                name="📊 Tier Teszt Eredmények",
+                value="*Még nincsenek rögzített eredmények.*",
+                inline=False
+            )
 
-            for label, key, raw_emoji in TICKET_TYPES:
-                clean_key = key.lower().replace(" ", "").replace("-", "").strip()
-                tier = user_tiers.get(clean_key, user_tiers.get(label.lower(), "Unranked"))
-                
-                emoji_str = get_emoji_from_config(key, raw_emoji)
-                embed_modern.add_field(name=f"{emoji_str} {label}", value=f"**{tier}**", inline=True)
+        embed.set_footer(text=f"NeonTiers.hu • Lekérve: {interaction.created_at.strftime('%Y-%m-%d %H:%M')}")
 
-            mod_rem = len(TICKET_TYPES) % 3
-            if mod_rem != 0:
-                for _ in range(3 - mod_rem):
-                    embed_modern.add_field(name="\u200b", value="\u200b", inline=True)
+        await interaction.followup.send(embed=embed)
 
-            # ===============================
-            # LEGACY MÓDOK EMBED
-            # ===============================
-            embed_legacy = discord.Embed(color=discord.Color.gold())
-            embed_legacy.add_field(name="───────────────", value="**🏛️ LEGACY MÓDOK**", inline=False)
-            
-            for label, key, raw_emoji in LEGACY_TICKET_TYPES:
-                clean_key = key.lower().replace(" ", "").replace("-", "").strip()
-                tier = user_tiers.get(clean_key, user_tiers.get(label.lower(), "Unranked"))
-                
-                emoji_str = get_emoji_from_config(key, raw_emoji)
-                embed_legacy.add_field(name=f"{emoji_str} {label}", value=f"**{tier}**", inline=True)
 
-            leg_rem = len(LEGACY_TICKET_TYPES) % 3
-            if leg_rem != 0:
-                for _ in range(3 - leg_rem):
-                    embed_legacy.add_field(name="\u200b", value="\u200b", inline=True)
-
-            await interaction.followup.send(embeds=[embed_modern, embed_legacy])
-            
-        except Exception as e:
-            print(f"[PROFILE ERROR] {traceback.format_exc()}")
-            await interaction.followup.send("❌ Hiba történt a profil lekérdezése közben.")
-
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(ProfileCog(bot))
