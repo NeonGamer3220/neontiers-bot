@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from config import config
 
-# Logging beállítása
+# Logging beállítások
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -32,10 +32,10 @@ INITIAL_EXTENSIONS = [
     "commands.support_ticket",
     "commands.notifications",
     "commands.panels",
-    "commands.send_message",  # A különálló sendmessage modul
+    "commands.send_message",
 ]
 
-# Discord Bot Intents beállítása
+# Discord Bot Intents
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -48,8 +48,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     log.info("Fő bot elindult: %s (ID: %s)", bot.user, bot.user.id)
     
-    # Slash parancsok globális/szerver szintű szinkronizálása
     try:
+        # Frissítjük a parancsfa szinkronizálását, hogy a Discord kliens megkapja a helyes szignatúrákat
         synced = await bot.tree.sync()
         log.info("Sikeresen szinkronizálva %d parancs a szerverre.", len(synced))
     except Exception as exc:
@@ -66,7 +66,7 @@ async def main():
             except Exception as exc:
                 log.error("Hiba a(z) %s extenzió betöltésekor: %s", ext, exc)
 
-        # Bot indítása a token használatával
+        # Bot indítása
         token = os.getenv("DISCORD_TOKEN") or getattr(config, "DISCORD_TOKEN", None)
         if not token:
             log.critical("Nincs beállítva DISCORD_TOKEN a környezeti változók között!")
