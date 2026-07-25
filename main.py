@@ -34,6 +34,7 @@ INITIAL_EXTENSIONS = [
     "commands.weekly_report",
     "commands.regulator_panel",
     "commands.send_message",
+    "commands.queue_panel", # <--- EZT ADD HOZZÁ
 ]
 
 # Discord Bot Intents beállítása
