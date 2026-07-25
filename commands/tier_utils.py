@@ -1,6 +1,6 @@
 """
 NeonTiers Bot - Tier Utils (commands/tier_utils.py)
-Pontos kategória azonosítók és segédfüggvények.
+Pontos kategória azonosítók és inaktivitási struktúrák.
 """
 
 import discord
@@ -18,6 +18,14 @@ THEME_LIGHT_BLUE = 0x3498db
 ACTIVE_QUEUES = {}  # queue_ch_id: { "players": [...], "testers": [...], "gamemode": ..., "msg_id": ... }
 INACTIVE_TICKETS = {} # channel_id: { "owner_id": ..., "warned": bool, "warn_time": ... }
 VALID_HT_TIERS = ["HT1", "HT2", "HT3", "HT4", "HT5", "LT1", "LT2", "LT3", "LT4", "LT5"]
+HIGHTEST_OPTIONS = [
+    ("High Test - HT1", "HT1", "⚔️"),
+    ("High Test - HT2", "HT2", "⚔️"),
+    ("High Test - HT3", "HT3", "⚔️"),
+    ("High Test - HT4", "HT4", "⚔️"),
+    ("High Test - HT5", "HT5", "⚔️"),
+]
+
 COOLDOWNS = {}  # (user_id, gamemode): timestamp
 
 def get_ticket_category(guild: discord.Guild, is_legacy: bool):
