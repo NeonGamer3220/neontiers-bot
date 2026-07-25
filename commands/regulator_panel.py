@@ -7,7 +7,7 @@ from config import SUPABASE_URL, SUPABASE_KEY, LOG_CHANNEL_ID
 
 REGULATOR_ROLE_NAME = "Regulator"  # Szükség esetén módosítható
 
-async def send_log(bot: discord.bot, title: str, description: str, color: discord.Color, fields: list = None):
+async def send_log(bot: discord.Client, title: str, description: str, color: discord.Color, fields: list = None):
     """Segédfüggvény a logok elküldéséhez a megadott csatornába"""
     if not LOG_CHANNEL_ID:
         return
@@ -85,13 +85,11 @@ class ManualTestModal(discord.ui.Modal, title="Manuális Teszt Rögzítés (LT3-
                 url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/tests"
                 async with session.post(url, json=payload, headers=headers) as resp:
                     if resp.status in [200, 201]:
-                        # Válasz a felhasználónak
                         await interaction.followup.send(
                             f"✅ Sikeresen rögzítve!\n* Játékos: `{self.minecraft_name.value}`\n* Játékmód: `{self.gamemode.value}`\n* Tier: `{self.tier.value.upper()}`\n* Eredmény: `{self.result.value}`",
                             ephemeral=True
                         )
 
-                        # LOGOLÁS A CSATORNÁBA
                         fields = [
                             ("Regulator / Teszter", f"{interaction.user.mention} (`{interaction.user.id}`)", False),
                             ("Játékos", f"`{self.minecraft_name.value}`", True),
@@ -150,7 +148,6 @@ class CooldownResetModal(discord.ui.Modal, title="Játékos Cooldown Törlése")
                         ephemeral=True
                     )
 
-                    # LOGOLÁS A CSATORNÁBA
                     fields = [
                         ("Regulator", f"{interaction.user.mention} (`{interaction.user.id}`)", False),
                         ("Érintett Játékos", f"`{self.minecraft_name.value}`", True),
@@ -211,4 +208,4 @@ class RegulatorPanelCog(commands.Cog):
         await interaction.response.send_message(embed=embed, view=RegulatorPanelView(), ephemeral=True)
 
 async def setup(bot):
-    await bot.load_extension('commands.regulator_panel')
+    await bot.add_cog(RegulatorPanelCog(bot))
