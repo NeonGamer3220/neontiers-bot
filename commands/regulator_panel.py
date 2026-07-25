@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import aiohttp
 import datetime
+import time
 from config import SUPABASE_URL, SUPABASE_KEY, LOG_CHANNEL_ID
 
 REGULATOR_ROLE_NAME = "Regulator"  # Szükség esetén módosítható a rang neve
@@ -65,7 +66,11 @@ class ManualTestModal(discord.ui.Modal, title="Manuális Teszt Rögzítés (LT3-
             "Prefer": "return=minimal"
         }
 
+        # Egyedi bigint ID generálása az időbélyeg alapján
+        unique_id = int(time.time() * 1000)
+
         payload = {
+            "id": unique_id,
             "username": self.minecraft_name.value.strip(),
             "gamemode": self.gamemode.value.strip().lower(),
             "rank": self.tier.value.strip().upper(),
