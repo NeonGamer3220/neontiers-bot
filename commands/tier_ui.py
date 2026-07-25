@@ -1,6 +1,6 @@
 """
 NeonTiers Bot - Tier UI & Modals (commands/tier_ui.py)
-High Test ticketek csak javaslat/eredmény beküldéssel és lezárással, pontos kategóriák.
+High Test javaslat beküldő modal (nem zárja be azonnal a csatornát) és tier alapú High Test opciók.
 """
 
 import discord
@@ -8,14 +8,86 @@ import asyncio
 import time
 from config import TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES, get_gamemode_display_name, STAFF_ROLE_ID, REGULATOR_ROLE_ID
 from commands.tier_utils import (
-    ACTIVE_QUEUES, INACTIVE_TICKETS, VALID_HT_TIERS, get_ticket_category, get_queue_category, 
-    update_queue_message, set_cooldown, check_timeout, THEME_LIGHT_PURPLE
+    ACTIVE_QUEUES, INACTIVE_TICKETS, VALID_HT_TIERS, HIGHTEST_OPTIONS, 
+    get_ticket_category, get_queue_category, update_queue_message, 
+    set_cooldown, check_timeout, THEME_LIGHT_PURPLE
 )
 from commands.ban_enforcement import is_banned_by_role
 from database import get_linked_minecraft_name_async, save_test_result_supabase
 
 
-class TestResultModal(discord.ui.Modal, title="Javaslat / Eredmény Beküldése"):
+class HighTestSuggestionModal(discord.ui.Modal, title="Javaslat Beküldése"):
+    def __init__(self, player_id: int, player_mc: str, tier_mode: str):
+        super().__init__()
+        self.player_id = player_id
+        self.player_mc = player_mc
+        self.tier_mode = tier_mode
+
+        self.suggestion_input = discord.ui.TextInput(
+            label="Javaslat / Vélemény / Eredmény",
+            placeholder="Írd le a javaslatodat vagy a teszt részleteit...",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=1500
+        )
+        self.add_item(self.suggestion_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        suggestion_text = self.suggestion_input.value.strip()
+        user = interaction.user
+
+        embed = discord.Embed(
+            title=f"💡 Javaslat érkezett ({self.tier_mode})",
+            description=suggestion_text,
+            color=discord.Color.gold()
+        )
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url if user.display_avatar else None)
+        embed.add_field(name="Érintett Játékos", value=f"<@{self.player_id}> (**{self.player_mc}**)", inline=False)
+        embed.set_footer(text="NeonTiers Management System")
+
+        if interaction.channel.id in INACTIVE_TICKETS:
+            INACTIVE_TICKETS[interaction.channel.id]["last_activity"] = time.time()
+            INACTIVE_TICKETS[interaction.channel.id]["warned"] = False
+
+        await interaction.channel.send(embed=embed)
+        await interaction.followup.send("✅ Javaslat sikeresen beküldve a ticketbe!", ephemeral=True)
+
+
+class HighTestTicketView(discord.ui.View):
+    def __init__(self, player_id: int, player_mc: str, tier_mode: str):
+        super().__init__(timeout=None)
+        self.player_id = player_id
+        self.player_mc = player_mc
+        self.tier_mode = tier_mode
+
+    @discord.ui.button(label="📝 Javaslat Beküldése", style=discord.ButtonStyle.green, custom_id="hightest_suggest_btn")
+    async def suggest_result(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = HighTestSuggestionModal(
+            player_id=self.player_id,
+            player_mc=self.player_mc,
+            tier_mode=self.tier_mode
+        )
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="🔒 Lezárás", style=discord.ButtonStyle.gray, custom_id="hightest_close_btn")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        is_staff = interaction.user.guild_permissions.administrator or any(r.id in [STAFF_ROLE_ID, REGULATOR_ROLE_ID] for r in interaction.user.roles)
+        if not is_staff and interaction.user.id != self.player_id:
+            return await interaction.response.send_message("❌ Ezt a ticketet csak a játékos vagy staff zárhatja le!", ephemeral=True)
+
+        if interaction.channel.id in INACTIVE_TICKETS:
+            del INACTIVE_TICKETS[interaction.channel.id]
+
+        await interaction.response.send_message("🔒 Ticket lezárva. A csatorna 3 másodperc múlva törlődik...", ephemeral=True)
+        await asyncio.sleep(3)
+        try:
+            await interaction.channel.delete(reason=f"High Test lezárva: {interaction.user.display_name}")
+        except Exception:
+            pass
+
+
+class TestResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
     def __init__(self, player_id: int, player_mc: str, gamemode: str, queue_ch_id: int = None):
         super().__init__()
         self.player_id = player_id
@@ -24,7 +96,7 @@ class TestResultModal(discord.ui.Modal, title="Javaslat / Eredmény Beküldése"
         self.queue_ch_id = queue_ch_id
 
         self.tier_input = discord.ui.TextInput(
-            label="Javasolt / Elért Szint (Tier)",
+            label="Elért Szint (Tier)",
             placeholder="pl. LT3, HT2, Unranked",
             required=True,
             max_length=20
@@ -59,47 +131,11 @@ class TestResultModal(discord.ui.Modal, title="Javaslat / Eredmény Beküldése"
             except Exception:
                 pass
 
-        if interaction.channel.id in INACTIVE_TICKETS:
-            del INACTIVE_TICKETS[interaction.channel.id]
-
-        await interaction.followup.send(f"✅ Javaslat/Eredmény sikeresen beküldve! Játékos: **{self.player_mc}** | Szint: **{tier}**", ephemeral=True)
+        await interaction.followup.send(f"✅ Sikeresen rögzítve! Játékos: **{self.player_mc}** | Szint: **{tier}**", ephemeral=True)
         
         await asyncio.sleep(3)
         try:
             await interaction.channel.delete(reason=f"Teszt befejezve: {tester_user.display_name}")
-        except Exception:
-            pass
-
-
-class HighTestTicketView(discord.ui.View):
-    def __init__(self, player_id: int, player_mc: str, gamemode: str):
-        super().__init__(timeout=None)
-        self.player_id = player_id
-        self.player_mc = player_mc
-        self.gamemode = gamemode
-
-    @discord.ui.button(label="📝 Javaslat Beküldése", style=discord.ButtonStyle.green, custom_id="hightest_suggest_result")
-    async def suggest_result(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = TestResultModal(
-            player_id=self.player_id,
-            player_mc=self.player_mc,
-            gamemode=self.gamemode
-        )
-        await interaction.response.send_modal(modal)
-
-    @discord.ui.button(label="🔒 Lezárás", style=discord.ButtonStyle.gray, custom_id="hightest_close_ticket")
-    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        is_staff = interaction.user.guild_permissions.administrator or any(r.id in [STAFF_ROLE_ID, REGULATOR_ROLE_ID] for r in interaction.user.roles)
-        if not is_staff and interaction.user.id != self.player_id:
-            return await interaction.response.send_message("❌ Ezt a ticketet csak a játékos vagy staff zárhatja le!", ephemeral=True)
-
-        if interaction.channel.id in INACTIVE_TICKETS:
-            del INACTIVE_TICKETS[interaction.channel.id]
-
-        await interaction.response.send_message("🔒 Ticket lezárva. A csatorna 3 másodperc múlva törlődik...", ephemeral=True)
-        await asyncio.sleep(3)
-        try:
-            await interaction.channel.delete(reason=f"Ticket lezárva: {interaction.user.display_name}")
         except Exception:
             pass
 
@@ -249,7 +285,10 @@ class PanelSelectView(discord.ui.View):
         self.mode_type = mode_type
         self.action_type = action_type
         
-        types_list = LEGACY_TICKET_TYPES if mode_type.lower() == "legacy" else TICKET_TYPES
+        if action_type == "hightest":
+            types_list = HIGHTEST_OPTIONS
+        else:
+            types_list = LEGACY_TICKET_TYPES if mode_type.lower() == "legacy" else TICKET_TYPES
         
         options = []
         for lbl, key, emoji in types_list[:25]:
@@ -270,7 +309,7 @@ class PanelSelect(discord.ui.Select):
         placeholders = {
             "ping": f"Válassz értesítési kategóriát ({mode_type.upper()})...",
             "queue": f"Válassz játékmódot a várólistához ({mode_type.upper()})...",
-            "hightest": f"Válassz High Tier tesztet ({mode_type.upper()})..."
+            "hightest": f"Válassz High Tier szintet ({mode_type.upper()})..."
         }
         super().__init__(
             placeholder=placeholders.get(action_type, "Válassz..."),
@@ -283,14 +322,14 @@ class PanelSelect(discord.ui.Select):
         self.mode_type = mode_type
 
     async def callback(self, interaction: discord.Interaction):
-        key = self.values[0]
-        label = get_gamemode_display_name(key)
+        key = self.values[0]  # pl. "HT4" vagy játékmód kulcs
         is_legacy = (self.mode_type.lower() == "legacy")
         guild = interaction.guild
         user = interaction.user
 
         # 1. PING PANEL
         if self.action_type == "ping":
+            label = get_gamemode_display_name(key)
             role_name = f"{label} Queue"
             role = discord.utils.get(guild.roles, name=role_name) or discord.utils.get(guild.roles, name=label)
             
@@ -305,7 +344,7 @@ class PanelSelect(discord.ui.Select):
                 await interaction.response.send_message(f"✅ Sikeresen **feliratkoztál** ehhez a pinghez: **{label}** ({self.mode_type})", ephemeral=True)
             return
 
-        # 2. HIGHTEST PANEL (High Test Ticket)
+        # 2. HIGHTEST PANEL (High Test Ticket - Pl. HT4)
         if self.action_type == "hightest":
             if is_banned_by_role(user):
                 return await interaction.response.send_message("❌ Ki vagy tiltva a tesztekről!", ephemeral=True)
@@ -317,7 +356,7 @@ class PanelSelect(discord.ui.Select):
             await interaction.response.defer(ephemeral=True)
             category = get_ticket_category(guild, is_legacy)
 
-            tester_role_name = f"{label} Tester"
+            tester_role_name = f"{key} Tester"
             tester_role = discord.utils.get(guild.roles, name=tester_role_name)
             regulator_role = guild.get_role(REGULATOR_ROLE_ID)
 
@@ -333,10 +372,10 @@ class PanelSelect(discord.ui.Select):
 
             try:
                 ticket_chan = await guild.create_text_channel(
-                    name=f"hightest-{mc_name.lower()}",
+                    name=f"hightest-{key.lower()}-{mc_name.lower()}",
                     category=category,
                     overwrites=overwrites,
-                    topic=f"High Test Ticket - {label} ({self.mode_type}) | Játékos: {mc_name}"
+                    topic=f"High Test Ticket - {key} ({self.mode_type}) | Játékos: {mc_name}"
                 )
             except Exception as e:
                 return await interaction.followup.send(f"❌ Nem sikerült High Test csatornát létrehozni: `{e}`", ephemeral=True)
@@ -348,14 +387,15 @@ class PanelSelect(discord.ui.Select):
             }
 
             embed = discord.Embed(
-                title=f"⚔️ High Tier Teszt Ticket: {label} ({self.mode_type})",
-                description=f"Játékos: {user.mention} (**{mc_name}**)\n\nEz egy privát High Test ticket. Kérlek küldd be a javaslatodat/eredményedet az alábbi gombbal!",
+                title=f"⚔️ High Tier Teszt: {key} ({self.mode_type})",
+                description=f"Játékos: {user.mention} (**{mc_name}**)\n\nEz egy privát High Test ticket. Küldd be a javaslatodat/eredményedet az alábbi gombbal!",
                 color=discord.Color.purple()
             )
             await ticket_chan.send(content=f"{user.mention}", embed=embed, view=HighTestTicketView(user.id, mc_name, key))
             return await interaction.followup.send(f"✅ High Test ticket sikeresen megnyitva: {ticket_chan.mention}", ephemeral=True)
 
         # 3. QUEUE PANEL (Várólista)
+        label = get_gamemode_display_name(key)
         await interaction.response.defer(ephemeral=True)
         category = get_queue_category(guild, is_legacy)
         
