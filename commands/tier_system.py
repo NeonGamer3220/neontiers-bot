@@ -19,6 +19,12 @@ from commands.ban_enforcement import is_banned_by_role
 from database import get_linked_minecraft_name_async, supabase_select
 
 # ==========================================
+# DESIGN TÉMA SZÍNEK
+# ==========================================
+THEME_LIGHT_PURPLE = 0xA388EE
+THEME_LIGHT_BLUE = 0x88CCEE
+
+# ==========================================
 # ADATTÁROLÓK & CONSTANSOK
 # ==========================================
 COOLDOWN_FILE = "tier_cooldowns.json"
@@ -42,7 +48,6 @@ ALLOWED_QUEUE_TIERS = ["UNRANKED", "LT5", "HT5", "LT4", "HT4", "LT3"]
 # SUPABASE HELPER MŰVELETEK (UPSERT/UPDATE/INSERT)
 # ==========================================
 async def save_test_result_supabase(username: str, gamemode_display: str, rank: str, points: int, existing_id: Optional[int] = None):
-    """Beszúrja vagy frissíti a teszt eredményét a Supabase 'tests' táblában."""
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     
     headers = {
@@ -140,7 +145,11 @@ async def update_queue_message(message: discord.Message, q_data: dict, gamemode:
     for t_id in q_data["testers"]:
         desc += f"🛡️ <@{t_id}>\n"
         
-    embed = discord.Embed(title=f"{emoji_str} {label_name} Várólista", description=desc, color=discord.Color.green())
+    embed = discord.Embed(
+        title=f"{emoji_str} {label_name} Várólista", 
+        description=desc, 
+        color=discord.Color(THEME_LIGHT_BLUE)
+    )
     try:
         await message.edit(embed=embed)
     except: pass
@@ -177,7 +186,6 @@ class TierResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
         mode_display = get_gamemode_display_name(self.gamemode)
         pts = POINTS.get(new_tier, 0)
         
-        # Fixed: supabase_select is synchronous (no await)
         player_tests = supabase_select("tests", "username", self.player_mc)
         existing_id = None
         user_tiers = {}
@@ -191,11 +199,10 @@ class TierResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
 
         user_tiers[mode_display.lower()] = new_tier
 
-        # Eredmény Embed
         log_embed = discord.Embed(
-            title="Teszt eredmény",
+            title="Teszt Eredmény",
             description=f"<@{self.tester_id}> **{new_tier}** tiert adott `{self.player_mc}` játékosnak **{mode_display}** játékmódból.",
-            color=discord.Color.purple()
+            color=discord.Color(THEME_LIGHT_PURPLE)
         )
         log_embed.set_thumbnail(url=f"https://minotar.net/helm/{self.player_mc}/256.png")
         
@@ -382,7 +389,7 @@ class QueueActiveView(discord.ui.View):
                 f"Bármilyen emberi üzenet újraindítja a 48 órás számlálót. Automatikus zárás előtt 4 órával figyelmeztetést küldök.\n\n"
                 f"Ha végeztetek, a kérelmet a teszter zárhatja le, utána a csatorna törlődik."
             ),
-            color=discord.Color.blue()
+            color=discord.Color(THEME_LIGHT_BLUE)
         )
         
         await channel.send(content=f"{player.mention} {interaction.user.mention}", embed=embed, view=QueueTestView(interaction.user.id, player.id, target_p['mc'], self.gamemode, interaction.channel.id))
@@ -425,7 +432,7 @@ class HTSuggestionModal(discord.ui.Modal, title="Tier Javaslat beküldése"):
 
     async def on_submit(self, interaction: discord.Interaction):
         reg_ping = f"<@&{REGULATOR_ROLE_ID}>" if REGULATOR_ROLE_ID else "@Regulator"
-        embed = discord.Embed(title="📊 Tier Javaslat", color=discord.Color.purple())
+        embed = discord.Embed(title="📊 Tier Javaslat", color=discord.Color(THEME_LIGHT_PURPLE))
         embed.add_field(name="Játékos", value=self.player_mc)
         embed.add_field(name="Játékmód", value=get_gamemode_display_name(self.gamemode))
         embed.add_field(name="Javaslat", value=self.tier.value)
@@ -492,7 +499,6 @@ class HTRequestButton(discord.ui.Button):
         if not mc_name:
             return await interaction.followup.send("❌ Nincs Minecraft fiókod linkelve!", ephemeral=True)
 
-        # Fixed: supabase_select is synchronous (no await)
         player_tests = supabase_select("tests", "username", mc_name)
         mode_display = get_gamemode_display_name(self.mode_key)
         
@@ -521,13 +527,17 @@ class HTRequestButton(discord.ui.Button):
             overwrites=overwrites
         )
 
-        embed = discord.Embed(title="**Magas tier teszt**", description=(
-            f"Nyitotta: {interaction.user.mention}\n"
-            f"Minecraft neved: `{mc_name}` Játékmód: **{self.mode_label}**\n\n"
-            f"**Inaktivitás**\n"
-            f"Bármilyen emberi üzenet újraindítja a 48 órás számlálót. Automatikus zárás előtt 4 órával figyelmeztetést küldök.\n\n"
-            f"Ha végeztetek, a kérelmet staff zárhatja le, utána a csatorna törlődik."
-        ), color=discord.Color.red())
+        embed = discord.Embed(
+            title="**Magas Tier Teszt**", 
+            description=(
+                f"Nyitotta: {interaction.user.mention}\n"
+                f"Minecraft neved: `{mc_name}` Játékmód: **{self.mode_label}**\n\n"
+                f"**Inaktivitás**\n"
+                f"Bármilyen emberi üzenet újraindítja a 48 órás számlálót. Automatikus zárás előtt 4 órával figyelmeztetést küldök.\n\n"
+                f"Ha végeztetek, a kérelmet staff zárhatja le, utána a csatorna törlődik."
+            ), 
+            color=discord.Color(THEME_LIGHT_BLUE)
+        )
         
         await channel.send(embed=embed, view=HTTicketView(interaction.user.id, self.mode_key, mc_name))
         
@@ -620,7 +630,11 @@ class OpenQueueButton(discord.ui.Button):
         }
 
         desc = f"**Helyek:** 0/20\n\n**Játékosok a várólistán:**\n*- Üres -*\n\n**Aktív Teszterek:**\n🛡️ <@{interaction.user.id}>\n"
-        embed = discord.Embed(title=f"{self.emoji_str} {self.mode_label} Várólista", description=desc, color=discord.Color.green())
+        embed = discord.Embed(
+            title=f"{self.emoji_str} {self.mode_label} Várólista", 
+            description=desc, 
+            color=discord.Color(THEME_LIGHT_BLUE)
+        )
         
         msg = await queue_chan.send(content=f"🔔 {q_ping}", embed=embed, view=QueueActiveView(self.mode_key, tester_role))
         ACTIVE_QUEUES[queue_chan.id]["msg_id"] = msg.id
@@ -694,7 +708,11 @@ class TierSystemCog(commands.Cog):
     @app_commands.describe(panel_type="Melyik játékmódokat szeretnéd látni?")
     async def pingpanel(self, interaction: discord.Interaction, panel_type: Literal['Modern', 'Legacy', 'All']):
         if not interaction.user.guild_permissions.administrator: return await interaction.response.send_message("❌ Nincs jogosultságod!", ephemeral=True)
-        embed = discord.Embed(title="🔔 Queue Értesítések", description="Kattints a gombokra, hogy megkapd az adott játékmód várólista értesítő rangját!", color=discord.Color.blue())
+        embed = discord.Embed(
+            title="🔔 Queue Értesítések", 
+            description="Kattints a gombokra, hogy megkapd az adott játékmód várólista értesítő rangját!", 
+            color=discord.Color(THEME_LIGHT_BLUE)
+        )
         await interaction.channel.send(embed=embed, view=PingPanelView(panel_type))
         await interaction.response.send_message("✅ Panel lerakva!", ephemeral=True)
 
@@ -702,7 +720,11 @@ class TierSystemCog(commands.Cog):
     @app_commands.describe(panel_type="Melyik játékmódokat szeretnéd látni?")
     async def queuepanel(self, interaction: discord.Interaction, panel_type: Literal['Modern', 'Legacy', 'All']):
         if not interaction.user.guild_permissions.administrator: return await interaction.response.send_message("❌ Nincs jogosultságod!", ephemeral=True)
-        embed = discord.Embed(title="🛡️ Teszt Várólista Megnyitása", description="Teszterként kattints a játékmódra a várólista megnyitásához az adott csatornában!", color=discord.Color.green())
+        embed = discord.Embed(
+            title="🛡️ Teszt Várólista Megnyitása", 
+            description="Teszterként kattints a játékmódra a várólista megnyitásához az adott csatornában!", 
+            color=discord.Color(THEME_LIGHT_PURPLE)
+        )
         await interaction.channel.send(embed=embed, view=OpenQueuePanelView(panel_type))
         await interaction.response.send_message("✅ Panel lerakva!", ephemeral=True)
 
@@ -712,13 +734,13 @@ class TierSystemCog(commands.Cog):
         if not interaction.user.guild_permissions.administrator: return await interaction.response.send_message("❌ Nincs jogosultságod!", ephemeral=True)
         
         embed = discord.Embed(
-            title="**Magas tier teszt igénylés**",
+            title="**Magas Tier Teszt Igénylés**",
             description=(
-                "HT3 vagy magasabb teszthez nyiss magas tier kérelmet. A megnyitás előtt elkérem és ellenőrizöm az eredeti Minecraft nevedet.\n\n"
+                "HT3 vagy magasabb teszthez nyiss magas tier kérelmet. A megnyitás előtt elkérem és ellenőrzöm az eredeti Minecraft nevedet.\n\n"
                 "**Fontos**\nMagas tier kérelemből egyszerre legfeljebb 12 nyitott lehet.\n\n"
                 "**Automatikus lezárás**\nBármilyen emberi üzenet újraindítja a 48 órás inaktivitási számlálót. Automatikus zárás előtt 4 órával figyelmeztetést küldök és megpingelem a nyitót."
             ),
-            color=discord.Color.red()
+            color=discord.Color(THEME_LIGHT_PURPLE)
         )
         await interaction.channel.send(embed=embed, view=HTPanelView(panel_type))
         await interaction.response.send_message("✅ Panel lerakva!", ephemeral=True)
