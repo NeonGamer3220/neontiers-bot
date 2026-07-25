@@ -316,49 +316,52 @@ class RegulatorPanelView(discord.ui.View):
             color=discord.Color.blue()
         )
         embed.add_field(
-            name="1. ⚔️ Alapvető Tesztelési Szabályok",
-            value="• **Tiltott dolgok:** Tilos az időhúzás (*stalling*), az indokolatlan kilépés harc közben, a bányászat *Survival* módban, valamint a pályák hibáinak kihasználása (*map abuse*).\n"
-                  "• **Korai ütések:** Az első ital elhasználása előtt tilos ütni; ha ez megtörténik, a kört újra kell indítani.\n"
-                  "• **Staff felügyelet:** Ha egy adminisztrátor/staff tag figyelni szeretné a harcot vagy kérni a mod-logokat, kötelező megmutatni, ellenkező esetben büntetés vagy a kör diszkvalifikációja jár.",
+            name="1. 🛠️ Modok és Kiegészítők",
+            value="• **Engedélyezett:** Low fire, Consumable Optimizer, shield status mod, és minden olyan mod ami nem ad előnyt / nem automatizálja a játékmenetet.\n"
+                  "• **Tiltott:** Mouse tweaks, Dura pack, Tweakaroo, Walksy/Marlow's Crystal Optimizer, Fire Client, Hack kliensek, pinget befolyásoló modok, Multi Keybinds, Health indicator, más kitett/plusz dolgok CPVP-ben.",
             inline=False
         )
         embed.add_field(
-            name="2. 📈 Előléptetés: LT3 → LT2",
-            value="• **LT3 → HT3:** Értékelő teszt egy LT3-as ellen (mindegy, mennyi ponttal nyersz), majd egy HT3 ellenfél, ahol **minimum a körök 75%-át** meg kell nyerned a tier megszerzéséhez. Ha a HT3 ellenfél szerzi meg a körök 75%-át, az LT3 tesztelő nem mehet tovább LT2-re.\n"
-                  "• **HT3 → LT2:** Értékelő teszt *csak akkor kell*, ha HT3-ról indult. Az értékelőn az ellenfél nem nyerheti meg a körök 75%-át. Ha sikeres, LT2 ellenfelek jönnek (körök **75%** megnyerése szükséges; ha az ellenfél is eléri a 75%-ot, nincs továbbjutás HT2-re).",
+            name="2. ⚖️ Tierlist Bannok & Büntetések",
+            value="• **Csalás / Tiltott mod:** 1 hónap (+ tier wipe ha van)\n"
+                  "• **Account sharing:** 3 hónap mindkét félnek (tier wipe csak annál, akinél játszottak)\n"
+                  "• **Alt tesztelés:** 1 hónap (alt törölve, eredeti ban)\n"
+                  "• **Boostolás / Megegyezés:** 1 hónap (+ tier wipe) | **SS / Handcam megtagadása:** 1-2 hónap\n"
+                  "• **Eredmény hamisítás / Staff megtévesztése:** 1-2 hónap\n"
+                  "• **Toxicitás / zaklatás:** 14 nap | **Sandbagging:** 1 hónap\n"
+                  "• **Megvesztegetés / Összejátszás:** Örök ban azonnal (nincs alkalom számolás)",
             inline=False
         )
         embed.add_field(
-            name="3. 📈 Előléptetés: LT2 → HT1 & Demote",
-            value="• **LT2 → HT2:** Értékelő teszt *csak akkor kell*, ha LT2-ről indult. Az értékelőn az ellenfél nem szerezheti meg a körök 75%-át. Ha sikeres, HT2 ellen meg kell nyernie a körök **75%-át** (ha az ellenfél megszerzi a 75%-ot, nem mehet tovább LT1-re).\n"
-                  "• **HT2 → LT1:** El kell vernie **2 db LT2-t és 2 db HT2-t** úgy, hogy *ők* ne nyerjék meg a körök 75%-át. Ekkor mehet LT1 ellen (ha van; ha nincs, a 4 győzelemmel megkapja az LT1-et).\n"
-                  "• **LT1 → HT1:** El kell vernie **4 db LT2-t és 4 db HT2-t** úgy, hogy *ők* ne nyerjék meg a körök **50%-át**, valamint egy másik LT1-et úgy, hogy *az LT1* ne nyerje meg a körök **75%-át**.\n"
-                  "• **Demote (Leminősítés):** Ha azonos tieren lévő játékosok harcolnak (pl. LT2 vs LT2) és valamelyik nem nyeri meg a körök **25%-át**, a játékos leminősítésre kerül (minden tierre érvényes).",
+            name="3. ⚔️ Teszt Közbeni Szabályzat",
+            value="• Tilos az időhúzás és a menekülés.\n"
+                  "• Mendelés / bújás / textúraváltás max 2 perc, utána a kör az ellenfélé (clip kell).\n"
+                  "• Időkérés / shiftelés: állj meg, redó kérhető ha nem áll meg (clip kell).\n"
+                  "• Lagg / DC: ha ledob a szerver, az ellenfélé a kör. Kifagyásnál 1 hit elnézhető, többnél redó.\n"
+                  "• Free hit tilos a kör elején. FFA szervereken harmadik fél beleszólásakor: újrakezdés.",
             inline=False
         )
         embed.add_field(
-            name="4. 🌉 Bridge Teszt Szabályok",
-            value="• Ha egy tierben lévő játékos tiergappelve (a kötelező határértéket túlteljesítve) elveri a saját tierjén lévő játékost egy teszten, **bridge-elhet**, azaz a következő tierben nem szükséges külön értékelő tesztet csinálni.",
+            name="4. 🔄 Újratesztelés & Új Név",
+            value="• Újratesztelés 14 naponta lehetséges. Első teszten max LT3.\n"
+                  "• **Névváltás:** 1. Discordon: `/unlink` majd `/link` | 2. A kódot 10 percen belül beírni a `chaosffa.kinetic.host` szerveren a `/link [kód]` paranccsal.",
             inline=False
         )
         embed.add_field(
-            name="5. 🏆 Retired (Visszavonulási) Rendszer",
-            value="• A retire csak **LT2 vagy annál magasabb** rangban lehetséges.\n"
-                  "• **Követelmény:** **2 defenset** kell szerezni (saját tierbeli vagy feljebb pályázó játékos legyőzésével, a körök **75%-ának** megnyerésével).\n"
-                  "• **Időtartamok:**\n"
-                  "  - **LT2 / HT2:** 2 védelem + **40+ nap** rangvédelem.\n"
-                  "  - **LT1:** 2 rangvédelem + **60+ nap**.\n"
-                  "  - **HT1:** 3 rangvédelem + **90+ nap**.",
+            name="5. 📊 Gamemód Követelmények & Besorolások",
+            value="• **LT3 alatt alap köresetek:** Vanilla/SMP/Cart (FT4, LT3 alatt FT3), DiaSMP/OGV/NethPot/Mace/SpearMace/SpearElytra/Trident (FT4, LT3 alatt FT2), Sword/Uhc/Pot/Creeper/ShieldlessUHC (FT10, LT3 alatt FT6), Axe (FT20, LT3 alatt FT10).\n"
+                  "• **Eredmény alapú tier besorolások:** (pl. Vanilla/NethPot 3-0/2-0: LT5/HT5/LT4, Sword/Pot 6-0: LT5/HT5, Axe 10-0: LT5/HT5; eval pass esetén LT3. Ha nagyobb a teszt eredmény, a teszter eltérhet).",
             inline=False
         )
         embed.add_field(
-            name="6. 🌐 Szerver- és Ellenfél-választási Szabályok",
-            value="• **Szerverválasztás:** Ha a felek nem tudnak megegyezni, a High Staff dönt. Cél az azonos MS/ping biztosítása mindkét fél számára.\n"
-                  "• **Ellenfél kiválasztás:** Először a **saját régióbeli** játékosok élveznek prioritást. Más régióbeli csak akkor rendelhető hozzá, ha a pingek kellően közel vannak egymáshoz. A fair játék érdekében a ping spoofing / egyenlő ping kikényszerítése a Staff által megengedett.",
+            name="6. 👴 UnRetire & Retired Rendszer",
+            value="• **UnRetire:** Indulás a retire tierből. 75% winrate kell az azonos tierű ellen, ha nem sikerül, lefelé haladva HT3-ig. Ha ott sem, maradhat a retire vagy megy sima eval tesztre.\n"
+                  "• **Retired feltételek:** Min. LT2 rang. 2 defenset kell szerezni saját tieredbeli vagy feljebb pályázó játékos legyőzésével (75% winrate). Az elmúlt 2 hónapban nem lehetett magasabb tier próbálkozásod.\n"
+                  "• **Időtartamok:** LT2/HT2: 2 védelem + 40+ nap | LT1: 2 védelem + 60+ nap | HT1: 3 védelem + 90+ nap.",
             inline=False
         )
         embed.add_field(
-            name="7. ⚠️ Hiba / Eltérés Jelentése",
+            name="7. ⚠️ Hiba Jelentése",
             value="• Ha hibás adatot vagy eltérést találsz az adatbázisban, ne szerkeszd önhatalmúlag, hanem használd a panelen lévő **⚠️ Hiba Jelentése** gombot a logoláshoz!",
             inline=False
         )
