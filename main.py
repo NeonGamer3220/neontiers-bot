@@ -31,6 +31,7 @@ INITIAL_EXTENSIONS = [
     "commands.spin",
     "commands.support_ticket",
     "commands.notifications",
+    "commands.weekly_report",
     "commands.send_message",
 ]
 
