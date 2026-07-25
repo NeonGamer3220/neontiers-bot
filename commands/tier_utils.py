@@ -1,6 +1,6 @@
 """
 NeonTiers Bot - Tier Utils (commands/tier_utils.py)
-Segédfüggvények, kategória azonosítók és aktív várólisták kezelése.
+Pontos kategória azonosítók és segédfüggvények.
 """
 
 import discord
@@ -9,13 +9,14 @@ import time
 MODERN_CATEGORY_ID = 1469766438238687496
 LEGACY_CATEGORY_ID = 1520523939225276536
 
-MODERN_QUEUE_CATEGORY_ID = MODERN_CATEGORY_ID
-LEGACY_QUEUE_CATEGORY_ID = LEGACY_CATEGORY_ID
+MODERN_QUEUE_CATEGORY_ID = 1478400462225936496
+LEGACY_QUEUE_CATEGORY_ID = 1520384820612567202
 
 THEME_LIGHT_PURPLE = 0x9b59b6
 THEME_LIGHT_BLUE = 0x3498db
 
 ACTIVE_QUEUES = {}  # queue_ch_id: { "players": [...], "testers": [...], "gamemode": ..., "msg_id": ... }
+INACTIVE_TICKETS = {} # channel_id: { "owner_id": ..., "warned": bool, "warn_time": ... }
 VALID_HT_TIERS = ["HT1", "HT2", "HT3", "HT4", "HT5", "LT1", "LT2", "LT3", "LT4", "LT5"]
 COOLDOWNS = {}  # (user_id, gamemode): timestamp
 
