@@ -6,6 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 import time
+import asyncio
 
 from commands.tier_ui import PanelSelectView
 from commands.tier_utils import INACTIVE_TICKETS
@@ -30,22 +31,21 @@ class TierSystemCog(commands.Cog):
                 continue
 
             try:
-                async for message in channel.history(limit=1):
-                    last_msg_time = message.created_at.timestamp()
-                    diff = now - last_msg_time
+                last_act = data.get("last_activity", now)
+                diff = now - last_act
 
-                    if not data["warned"] and diff >= 48 * 3600:
-                        data["warned"] = True
-                        data["warn_time"] = now
-                        owner = channel.guild.get_member(data["owner_id"])
-                        mention = owner.mention if owner else f"<@{data['owner_id']}>"
-                        await channel.send(f"⚠️ {mention} Mivel 48 órája nem érkezett üzenet, ez a ticket 4 óra múlva automatikusan lezárásra kerül, ha nem válaszolsz!")
-                    
-                    elif data["warned"] and (now - data["warn_time"]) >= 4 * 3600:
-                        await channel.send("🔒 Az inaktivitás miatt a ticket automatikusan lezárásra került.")
-                        to_delete.append(ch_id)
-                        await asyncio.sleep(2)
-                        await channel.delete(reason="Automatikus lezárás inaktivitás miatt (48h + 4h)")
+                if not data["warned"] and diff >= 48 * 3600:
+                    data["warned"] = True
+                    data["warn_time"] = now
+                    owner = channel.guild.get_member(data["owner_id"])
+                    mention = owner.mention if owner else f"<@{data['owner_id']}>"
+                    await channel.send(f"⚠️ {mention} Mivel 48 órája nem érkezett üzenet, ez a ticket 4 óra múlva automatikusan lezárásra kerül, ha nem válaszolsz!")
+                
+                elif data["warned"] and (now - data["warn_time"]) >= 4 * 3600:
+                    await channel.send("🔒 Az inaktivitás miatt a ticket automatikusan lezárásra került.")
+                    to_delete.append(ch_id)
+                    await asyncio.sleep(2)
+                    await channel.delete(reason="Automatikus lezárás inaktivitás miatt (48h + 4h)")
             except Exception:
                 pass
 
@@ -63,9 +63,10 @@ class TierSystemCog(commands.Cog):
         ch_id = message.channel.id
         if ch_id in INACTIVE_TICKETS:
             data = INACTIVE_TICKETS[ch_id]
+            data["last_activity"] = time.time()
             if data["warned"]:
                 data["warned"] = False
-                await message.channel.localesend if hasattr(message.channel, 'localesend') else message.channel.send("✅ Új üzenet érkezett, a 48 órás visszaszámlálás újrakezdődött!")
+                await message.channel.send("✅ Új üzenet érkezett, a 48 órás visszaszámlálás újrakezdődött!")
 
     @app_commands.command(name="pingpanel", description="Elküldi a ping panelt Modern vagy Legacy opcióval (dropdown).")
     @app_commands.describe(
@@ -123,7 +124,7 @@ class TierSystemCog(commands.Cog):
         target_channel = csatorna or interaction.channel
         embed = discord.Embed(
             title=f"⚔️ High Tier Tesztek ({tipus})",
-            description=f"Válaszd ki a(z) **{tipus}** High Tier tesztet az alábbi menüből a sor indításához.",
+            description=f"Válaszd ki a(z) **{tipus}** High Tier szintet az alábbi menüből a ticket nyitásához.",
             color=discord.Color.purple() if tipus == "Modern" else discord.Color.dark_purple()
         )
         embed.set_footer(text="NeonTiers Management System")
