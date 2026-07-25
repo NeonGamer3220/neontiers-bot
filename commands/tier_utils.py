@@ -9,100 +9,154 @@ from typing import Optional
 from config import (
     ALL_TICKET_TYPES, LEGACY_TICKET_TYPES, ELO_TICKET_CATEGORY_ID,
     LEGACY_TICKET_CATEGORY_ID, get_gamemode_display_name,
-    SUPABASE_URL, SUPABASE_KEY
+    SUPABASE_URL, SUPABASE_KEY, MODERN_RESULT_CHANNEL_ID, LEGACY_RESULT_CHANNEL_ID
 )
 
-# ==========================================
+# =========================================
 # DESIGN TÉMA SZÍNEK
-# ==========================================
+# =========================================
 THEME_LIGHT_PURPLE = 0xA388EE
 THEME_LIGHT_BLUE = 0x88CCEE
 
-# ==========================================
+# =========================================
 # ADATTÁROLÓK & CONSTANSOK
-# ==========================================
+# =========================================
 COOLDOWN_FILE = "tier_cooldowns.json"
 HT_TICKETS_FILE = "ht_tickets.json"
-ACTIVE_QUEUES = {} 
+ACTIVE_QUEUES = {}  # channel_id -> queue data
 
 MODE_COLORS = {
     "vanilla": 0x55FF55, "uhc": 0xFFAA00, "pot": 0xFF5555, "nethpot": 0xAA0000,
     "smp": 0x55FFFF, "sword": 0xAAAAAA, "axe": 0xAAAAAA, "mace": 0xAA00AA,
     "cart": 0xAAAAAA, "creeper": 0x55FF55, "diasmp": 0x55FFFF, "ogvanilla": 0x55FF55,
-    "shieldlessuhc": 0xFFAA00, "spearmace": 0xAA00AA, "spearelytra": 0xAA00AA,
-    "stickfight": 0xAA5500, "trident": 0x55FFFF, "boxing": 0x5555FF, "combo": 0xFF5555,
-    "bridge": 0x55FFFF, "nodebuff": 0xFF5555, "op": 0x55FFFF, "soup": 0xAA5500,
-    "fireballfight": 0xFFAA00
+    "shieldlessuhc": 0xFFAA00, "spearmace": 0xAA00AA, "spearelytra": 0x55FFFF, "trident": 0x55FFFF
 }
 
-VALID_HT_TIERS = ["LT3", "HT3", "LT2", "HT2", "LT1", "HT1", "RLT2", "RHT2", "RLT1", "RHT1"]
-ALLOWED_QUEUE_TIERS = ["UNRANKED", "LT5", "HT5", "LT4", "HT4", "LT3"]
+VALID_HT_TIERS = ["HT1", "LT1", "HT2", "LT2", "HT3", "LT3", "HT4", "LT4", "HT5", "LT5", "UNRANKED"]
+ALLOWED_QUEUE_TIERS = ["HT1", "LT1", "HT2", "LT2", "HT3", "LT3", "HT4", "LT4", "HT5", "LT5", "Unranked"]
 
-# ==========================================
-# SUPABASE HELPER MŰVELETEK
-# ==========================================
-async def save_test_result_supabase(username: str, gamemode_display: str, rank: str, points: int, existing_id: Optional[int] = None):
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal"
-    }
-    
-    payload = {
-        "username": username,
-        "gamemode": gamemode_display,
-        "rank": rank,
-        "points": points,
-        "created_at": now
-    }
-    
+# =========================================
+# COOLDOWN KEZELÉS (JSON)
+# =========================================
+def load_cooldowns() -> dict:
+    if not os.path.exists(COOLDOWN_FILE):
+        return {}
     try:
-        async with aiohttp.ClientSession() as session:
-            if existing_id:
-                url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/tests?id=eq.{existing_id}"
-                async with session.patch(url, headers=headers, json=payload):
-                    pass
-            else:
-                url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/tests"
-                async with session.post(url, headers=headers, json=payload):
-                    pass
+        with open(COOLDOWN_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_cooldowns(data: dict):
+    try:
+        with open(COOLDOWN_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
     except Exception as e:
-        print(f"[ERROR] Supabase mentési hiba: {e}")
+        print(f"[COOLDOWN SAVE ERROR] {e}")
 
-# ==========================================
-# SEGÉDFÜGGVÉNYEK
-# ==========================================
-def get_cooldown(discord_id: int, gamemode: str) -> float:
-    if not os.path.exists(COOLDOWN_FILE): return 0
-    try:
-        with open(COOLDOWN_FILE, "r") as f:
-            return json.load(f).get(str(discord_id), {}).get(gamemode, 0)
-    except: return 0
+def get_cooldown(user_id: int, gamemode: str) -> float:
+    cd = load_cooldowns()
+    return cd.get(str(user_id), {}).get(gamemode.lower(), 0.0)
 
-def set_cooldown(discord_id: int, gamemode: str):
-    data = {}
-    if os.path.exists(COOLDOWN_FILE):
+def set_cooldown(user_id: int, gamemode: str, timestamp: float):
+    cd = load_cooldowns()
+    u_str = str(user_id)
+    if u_str not in cd:
+        cd[u_str] = {}
+    cd[u_str][gamemode.lower()] = timestamp
+    save_cooldowns(cd)
+
+def check_timeout(user_id: int, gamemode: str, cooldown_days: int = 14) -> tuple[bool, str]:
+    last_time = get_cooldown(user_id, gamemode)
+    if not last_time:
+        return False, ""
+    
+    cooldown_seconds = cooldown_days * 86400
+    elapsed = time.time() - last_time
+    if elapsed < cooldown_seconds:
+        remaining = cooldown_seconds - elapsed
+        days = int(remaining // 86400)
+        hours = int((remaining % 86400) // 3600)
+        minutes = int((remaining % 3600) // 60)
+        return True, f"{days} nap, {hours} óra, {minutes} perc"
+    return False, ""
+
+# =========================================
+# SUPABASE EREDMÉNY MENTÉS & BEJELENTÉSEK
+# =========================================
+async def save_test_result_supabase(
+    discord_user: discord.User,
+    minecraft_name: str,
+    gamemode: str,
+    tier: str,
+    tester: discord.User,
+    interaction: discord.Interaction
+):
+    # Supabase API hívás (tests tábla)
+    if SUPABASE_URL and SUPABASE_KEY:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates"
+        }
+        url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/tests"
+        payload = {
+            "discord_id": str(discord_user.id),
+            "username": minecraft_name,
+            "gamemode": gamemode,
+            "rank": tier,
+            "tester": tester.display_name,
+            "tester_id": str(tester.id),
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
         try:
-            with open(COOLDOWN_FILE, "r") as f: data = json.load(f)
-        except: pass
-    if str(discord_id) not in data: data[str(discord_id)] = {}
-    data[str(discord_id)][gamemode] = time.time() + (14 * 24 * 3600)
-    with open(COOLDOWN_FILE, "w") as f: json.dump(data, f)
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as resp:
+                    if resp.status not in (200, 201, 204):
+                        err = await resp.text()
+                        print(f"[SUPABASE SAVE ERROR] {resp.status}: {err}")
+        except Exception as e:
+            print(f"[SUPABASE EXCEPTION] {e}")
 
-def check_timeout(discord_id: int) -> bool:
-    if not os.path.exists("timeouts.json"): return False
-    try:
-        with open("timeouts.json", "r") as f:
-            data = json.load(f).get(str(discord_id))
-            if data and time.time() < data.get("expires_at", 0): return True
-    except: pass
-    return False
+    # Eredmény csatornákra küldés
+    if MODERN_RESULT_CHANNEL_ID:
+        try:
+            channel = interaction.client.get_channel(MODERN_RESULT_CHANNEL_ID) or await interaction.client.fetch_channel(MODERN_RESULT_CHANNEL_ID)
+            if channel:
+                embed = discord.Embed(
+                    title="🏆 Új Tier Teszt Eredmény", 
+                    color=discord.Color.blue(), 
+                    timestamp=datetime.datetime.now(datetime.timezone.utc)
+                )
+                embed.add_field(name="Játékos", value=f"`{minecraft_name}` ({discord_user.mention})", inline=True)
+                embed.add_field(name="Játékmód", value=f"`{gamemode}`", inline=True)
+                embed.add_field(name="Elért Rank", value=f"**{tier}**", inline=True)
+                embed.add_field(name="Teszter", value=tester.mention, inline=False)
+                embed.set_footer(text="NeoTiers Official Tiers")
+                await channel.send(embed=embed)
+        except Exception as e:
+            print(f"[MODERN RESULT ERROR] {e}")
 
-def get_ticket_category(guild: discord.Guild, mode_key: str) -> Optional[discord.CategoryChannel]:
-    is_legacy = any(k == mode_key for _, k, _ in LEGACY_TICKET_TYPES)
+    if LEGACY_RESULT_CHANNEL_ID:
+        try:
+            channel = interaction.client.get_channel(LEGACY_RESULT_CHANNEL_ID) or await interaction.client.fetch_channel(LEGACY_RESULT_CHANNEL_ID)
+            if channel:
+                embed = discord.Embed(
+                    title="🏆 Új Tier Teszt Eredmény (Legacy)", 
+                    color=discord.Color.dark_blue(), 
+                    timestamp=datetime.datetime.now(datetime.timezone.utc)
+                )
+                embed.add_field(name="Játékos", value=f"`{minecraft_name}` ({discord_user.mention})", inline=True)
+                embed.add_field(name="Játékmód", value=f"`{gamemode}`", inline=True)
+                embed.add_field(name="Elért Rank", value=f"**{tier}**", inline=True)
+                embed.add_field(name="Teszter", value=tester.mention, inline=False)
+                embed.set_footer(text="NeoTiers Legacy Tiers")
+                await channel.send(embed=embed)
+        except Exception as e:
+            print(f"[LEGACY RESULT ERROR] {e}")
+
+def get_ticket_category(guild: discord.Guild, is_legacy: bool = False) -> Optional[discord.CategoryChannel]:
     cat_id = LEGACY_TICKET_CATEGORY_ID if is_legacy else ELO_TICKET_CATEGORY_ID
     category = guild.get_channel(cat_id) if cat_id else None
     if isinstance(category, discord.CategoryChannel):
@@ -135,15 +189,13 @@ async def update_queue_message(message: discord.Message, q_data: dict, gamemode:
             
     desc += "\n**Aktív Teszterek:**\n"
     if not q_data["testers"]:
-        desc += "*- Nincs teszter -*\n"
-    for t_id in q_data["testers"]:
-        desc += f"🛡️ <@{t_id}>\n"
-        
-    embed = discord.Embed(
-        title=f"{emoji_str} {label_name} Várólista", 
-        description=desc, 
-        color=discord.Color(THEME_LIGHT_BLUE)
-    )
+        desc += "*- Nincs aktív teszter -\n"
+    else:
+        for t_id in q_data["testers"]:
+            desc += f"🛡️ <@{t_id}>\n"
+            
+    embed = discord.Embed(title=f"{emoji_str} {label_name} Várólista", description=desc, color=discord.Color(THEME_LIGHT_BLUE))
     try:
         await message.edit(embed=embed)
-    except: pass
+    except Exception as e:
+        print(f"[UPDATE QUEUE ERROR] {e}")
