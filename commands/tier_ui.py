@@ -13,7 +13,7 @@ from config import (
 from commands.ban_enforcement import is_banned_by_role
 from database import get_linked_minecraft_name_async, supabase_select
 
-from tier_utils import (
+from .tier_utils import (
     THEME_LIGHT_PURPLE, THEME_LIGHT_BLUE,
     HT_TICKETS_FILE, ACTIVE_QUEUES, VALID_HT_TIERS, ALLOWED_QUEUE_TIERS,
     save_test_result_supabase, get_cooldown, set_cooldown,
