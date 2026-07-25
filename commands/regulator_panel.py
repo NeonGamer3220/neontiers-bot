@@ -5,7 +5,7 @@ import aiohttp
 import datetime
 from config import SUPABASE_URL, SUPABASE_KEY, LOG_CHANNEL_ID
 
-REGULATOR_ROLE_NAME = "Regulator"  # Szükség esetén módosítható
+REGULATOR_ROLE_NAME = "Regulator"  # Szükség esetén módosítható a rang neve
 
 async def send_log(bot: discord.Client, title: str, description: str, color: discord.Color, fields: list = None):
     """Segédfüggvény a logok elküldéséhez a megadott csatornába"""
@@ -206,6 +206,22 @@ class RegulatorPanelCog(commands.Cog):
         embed.set_footer(text="NeoTiers Management System")
 
         await interaction.response.send_message(embed=embed, view=RegulatorPanelView(), ephemeral=True)
+
+    @app_commands.command(name="setup-regulator-panel", description="Elküldi a nyilvános regulator panelt a megadott csatornába (Admin parancs).")
+    @app_commands.describe(channel="Az a csatorna, ahová a panelt küldeni kell")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setup_regulator_panel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        embed = discord.Embed(
+            title="🛡️ Regulator Kezelőpanel",
+            description="Üdv a regulator vezérlőpultban!\nVálassz az alábbi opciók közül a gombok megnyomásával:\n\n"
+                        "• **📝 Teszt Rögzítése:** Manuálisan felvihetsz egy tesztet LT3-ig.\n"
+                        "• **⏱️ Cooldown Törlése:** Eltávolíthatod egy játékos várakozási idejét egy adott játékmódban.",
+            color=discord.Color.dark_purple()
+        )
+        embed.set_footer(text="NeoTiers Management System")
+
+        await channel.send(embed=embed, view=RegulatorPanelView())
+        await interaction.response.send_message(f"✅ A regulator panel sikeresen elküldve ide: {channel.mention}!", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(RegulatorPanelCog(bot))
