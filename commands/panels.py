@@ -1,6 +1,6 @@
 """
 NeonTiers Bot - Panels Parancsok (commands/panels.py)
-A gombos alapú /pingpanel, /queuepanel és /hightestpanel parancsok visszaállítása.
+A gombos alapú /pingpanel, /queuepanel és /hightestpanel parancsok.
 """
 
 import discord
