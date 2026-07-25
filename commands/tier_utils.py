@@ -5,6 +5,12 @@ Pontos kategória azonosítók és inaktivitási struktúrák.
 
 import discord
 import time
+import json
+import os
+import io
+import datetime
+
+from config import ARCHIVE_CHANNEL_ID
 
 MODERN_CATEGORY_ID = 1469766438238687496
 LEGACY_CATEGORY_ID = 1520523939225276536
@@ -27,6 +33,9 @@ HIGHTEST_OPTIONS = [
 ]
 
 COOLDOWNS = {}  # (user_id, gamemode): timestamp
+
+ARCHIVE_INDEX_FILE = "ticket_archives.json"
+
 
 def get_ticket_category(guild: discord.Guild, is_legacy: bool):
     cat_id = LEGACY_CATEGORY_ID if is_legacy else MODERN_CATEGORY_ID
@@ -72,3 +81,84 @@ async def update_queue_message(message: discord.Message, q_data: dict, mode_key:
     embed = message.embeds[0]
     embed.description = desc
     await message.edit(embed=embed)
+
+
+def _load_archive_index() -> list:
+    if not os.path.exists(ARCHIVE_INDEX_FILE):
+        return []
+    try:
+        with open(ARCHIVE_INDEX_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def _save_archive_index(data: list):
+    try:
+        with open(ARCHIVE_INDEX_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+async def archive_channel(channel: discord.abc.Messageable, closed_by: discord.abc.User, reason: str = "") -> None:
+    """
+    Elmenti a csatorna teljes üzenet-előzményét egy .txt transcriptbe, elküldi az
+    archívum csatornába, és berögzíti egy kereshető indexbe (ticket_archives.json).
+    Ha nincs beállítva ARCHIVE_CHANNEL_ID, csendben kihagyja.
+    """
+    if not ARCHIVE_CHANNEL_ID:
+        return
+
+    guild = getattr(channel, "guild", None)
+    archive_chan = guild.get_channel(ARCHIVE_CHANNEL_ID) if guild else None
+    if not archive_chan:
+        return
+
+    lines = []
+    msg_count = 0
+    try:
+        async for msg in channel.history(limit=2000, oldest_first=True):
+            msg_count += 1
+            ts = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            author = f"{msg.author} ({msg.author.id})"
+            content = msg.content or ""
+            for e in msg.embeds:
+                title = e.title or ""
+                desc = e.description or ""
+                content += f"\n  [EMBED] {title} - {desc}"
+            for a in msg.attachments:
+                content += f"\n  [ATTACHMENT] {a.url}"
+            lines.append(f"[{ts}] {author}: {content}")
+    except Exception:
+        pass
+
+    transcript_text = "\n".join(lines) if lines else "(Nincs üzenet)"
+    buffer = io.BytesIO(transcript_text.encode("utf-8"))
+    filename = f"transcript-{channel.name}.txt"
+
+    embed = discord.Embed(
+        title=f"🗄️ Ticket Archiválva: #{channel.name}",
+        description=f"Lezárta: {closed_by.mention if hasattr(closed_by, 'mention') else closed_by}\nOk: {reason or '-'}\nÜzenetek száma: {msg_count}",
+        color=discord.Color.dark_grey(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc)
+    )
+
+    try:
+        archive_msg = await archive_chan.send(embed=embed, file=discord.File(fp=buffer, filename=filename))
+    except Exception:
+        return
+
+    index = _load_archive_index()
+    index.append({
+        "channel_name": channel.name,
+        "channel_id": channel.id,
+        "closed_by": str(closed_by),
+        "closed_by_id": getattr(closed_by, "id", None),
+        "reason": reason,
+        "message_count": msg_count,
+        "archive_message_id": archive_msg.id,
+        "archive_channel_id": ARCHIVE_CHANNEL_ID,
+        "closed_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    })
+    _save_archive_index(index)

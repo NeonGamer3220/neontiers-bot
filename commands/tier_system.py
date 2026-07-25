@@ -9,7 +9,7 @@ import time
 import asyncio
 
 from commands.tier_ui import PanelSelectView
-from commands.tier_utils import INACTIVE_TICKETS
+from commands.tier_utils import INACTIVE_TICKETS, archive_channel
 
 
 class TierSystemCog(commands.Cog):
@@ -45,6 +45,8 @@ class TierSystemCog(commands.Cog):
                     await channel.send("🔒 Az inaktivitás miatt a ticket automatikusan lezárásra került.")
                     to_delete.append(ch_id)
                     await asyncio.sleep(2)
+                    owner = channel.guild.get_member(data["owner_id"])
+                    await archive_channel(channel, owner or self.bot.user, reason="Automatikus lezárás inaktivitás miatt (48h + 4h)")
                     await channel.delete(reason="Automatikus lezárás inaktivitás miatt (48h + 4h)")
             except Exception:
                 pass
@@ -67,6 +69,36 @@ class TierSystemCog(commands.Cog):
             if data["warned"]:
                 data["warned"] = False
                 await message.channel.send("✅ Új üzenet érkezett, a 48 órás visszaszámlálás újrakezdődött!")
+
+    @app_commands.command(name="archives", description="Kilistázza a legutóbb archivált ticketeket.")
+    @app_commands.describe(count="Hány legutóbbi archívumot listázzon ki (max 25).", jatekos="Szűrés Minecraft név / csatornanév alapján (opcionális).")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def archives(self, interaction: discord.Interaction, count: int = 10, jatekos: str = None):
+        import json, os
+        if not os.path.exists("ticket_archives.json"):
+            return await interaction.response.send_message("📭 Még nincs archivált ticket.", ephemeral=True)
+        try:
+            with open("ticket_archives.json", "r", encoding="utf-8") as f:
+                index = json.load(f)
+        except Exception:
+            return await interaction.response.send_message("❌ Nem sikerült beolvasni az archívum indexet.", ephemeral=True)
+
+        if jatekos:
+            index = [e for e in index if jatekos.lower() in e.get("channel_name", "").lower()]
+
+        index = list(reversed(index))[:max(1, min(count, 25))]
+        if not index:
+            return await interaction.response.send_message("📭 Nincs találat.", ephemeral=True)
+
+        embed = discord.Embed(title="🗄️ Legutóbbi Archivált Ticketek", color=discord.Color.dark_grey())
+        for e in index:
+            jump = f"https://discord.com/channels/{interaction.guild.id}/{e.get('archive_channel_id')}/{e.get('archive_message_id')}"
+            embed.add_field(
+                name=f"#{e.get('channel_name')}",
+                value=f"Lezárta: {e.get('closed_by')}\nOk: {e.get('reason') or '-'}\nÜzenetek: {e.get('message_count')}\n[Megnyitás]({jump})",
+                inline=False
+            )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="pingpanel", description="Elküldi a ping panelt Modern vagy Legacy opcióval (dropdown).")
     @app_commands.describe(
