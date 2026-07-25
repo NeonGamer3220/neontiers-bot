@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import random
 
-from database import supabase_select, get_discord_by_minecraft_async
+from database import db, get_discord_by_minecraft_async
 from config import get_gamemode_display_name, normalize_gamemode
 
 class SpinCog(commands.Cog):
@@ -24,15 +24,22 @@ class SpinCog(commands.Cog):
         if target_tier in ["UNRANKED", "500"]:
             target_tier = "UNRANKED"
 
-        # OPTIMALIZÁLT LEKÉRDEZÉS: Csak az adott játékmód adataira szűrünk
-        mode_players = await supabase_select("tests", {"gamemode": mode_display})
+        if not db._client:
+            await interaction.followup.send("❌ Adatbázis kapcsolat nem elérhető.")
+            return
+
+        try:
+            resp = db._client.table("tests").select("*").ilike("gamemode", mode_display).execute()
+            mode_players = resp.data if resp.data else []
+        except Exception as e:
+            await interaction.followup.send(f"❌ Hiba az adatbázis lekérdezésekor: `{e}`")
+            return
         
         valid_targets = []
         for p in mode_players:
             rank = str(p.get("rank", "Unranked")).strip().upper()
             if rank == "500":
                 rank = "UNRANKED"
-                
             if rank == target_tier:
                 valid_targets.append(p)
                 
@@ -61,7 +68,8 @@ class SpinCog(commands.Cog):
         embed.add_field(name="Discord", value=discord_mention, inline=False)
         embed.add_field(name="Minecraft név", value=f"`{winner_mc}`", inline=False)
         embed.add_field(name="Játékmód", value=mode_display, inline=True)
-        embed.add_field(name="Jelenlegi Tier", value=f"**{winner_rank}**", inline=True)
+        embed.add_field(name="Szint (Tier)", value=f"**{winner_rank}**", inline=True)
+        embed.set_footer(text="NeoTiers Spin System")
         
         await interaction.followup.send(embed=embed)
 
