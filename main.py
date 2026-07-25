@@ -32,6 +32,7 @@ INITIAL_EXTENSIONS = [
     "commands.support_ticket",
     "commands.notifications",
     "commands.weekly_report",
+    "commands.regulator_panel",
     "commands.send_message",
 ]
 
