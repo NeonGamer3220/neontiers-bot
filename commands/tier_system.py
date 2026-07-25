@@ -7,7 +7,7 @@ from config import (
     ALL_TICKET_TYPES, LEGACY_TICKET_TYPES, get_gamemode_display_name
 )
 from commands.tier_ui import QueueActiveView
-from tier_utils import ACTIVE_QUEUES, get_ticket_category, THEME_LIGHT_PURPLE
+from commands.tier_utils import ACTIVE_QUEUES, get_ticket_category, THEME_LIGHT_PURPLE
 
 class OpenQueueModal(discord.ui.Modal, title="Várólista Nyitása"):
     def __init__(self, mode_key: str, mode_label: str, emoji_str: str, is_legacy: bool):
@@ -70,7 +70,7 @@ class OpenQueuePanelView(discord.ui.View):
         self.is_legacy = is_legacy
         types = LEGACY_TICKET_TYPES if is_legacy else TICKET_TYPES
         
-        for label, key, emoji_raw in types[:25]:  # Discord limit: max 25 elem select-ben
+        for label, key, emoji_raw in types[:25]:
             emoji_str = str(emoji_raw)
             if emoji_str.isdigit():
                 emoji_str = discord.PartialEmoji(name=label.replace(" ", ""), id=int(emoji_str))
