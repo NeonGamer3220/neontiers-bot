@@ -308,6 +308,9 @@ class RegulatorPanelView(discord.ui.View):
     # 3. Sor (Szabályzat & Súgó)
     @discord.ui.button(label="📖 Szabályzat & Súgó", style=discord.ButtonStyle.primary, custom_id="reg_panel:rules", row=2)
     async def rules_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Azonnali válaszadás jelzése, hogy elkerüljük a 3 másodperces Discord időtúllépést
+        await interaction.response.defer(thinking=True, ephemeral=True)
+
         embed = discord.Embed(
             title="📖 NeoTiers Regulator Szabályzat & Útmutató",
             description="Íme a hivatalos irányelvek és szabályok a regulatorok számára:",
@@ -357,8 +360,9 @@ class RegulatorPanelView(discord.ui.View):
             inline=False
         )
         embed.set_footer(text="NeoTiers Management System")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
+        
+        # Followup üzenet küldése a defer után
+        await interaction.followup.send(embed=embed, ephemeral=True)
 class RegulatorPanelCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
