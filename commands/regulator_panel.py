@@ -45,16 +45,10 @@ class ManualTestModal(discord.ui.Modal, title="Manuális Teszt Rögzítés (LT3-
         max_length=30
     )
     tier = discord.ui.TextInput(
-        label="Tesztelt Tier (LT3 vagy alatta)",
+        label="Elért Tier (LT3 vagy alatta)",
         placeholder="pl. LT3, LT4, LT5",
         required=True,
         max_length=10
-    )
-    result = discord.ui.TextInput(
-        label="Eredmény",
-        placeholder="Sikeres vagy Sikertelen",
-        required=True,
-        max_length=20
     )
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -74,8 +68,7 @@ class ManualTestModal(discord.ui.Modal, title="Manuális Teszt Rögzítés (LT3-
         payload = {
             "username": self.minecraft_name.value.strip(),
             "gamemode": self.gamemode.value.strip().lower(),
-            "tested_tier": self.tier.value.strip().upper(),
-            "result": self.result.value.strip(),
+            "tier": self.tier.value.strip().upper(),
             "tester_id": str(interaction.user.id),
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
@@ -86,7 +79,7 @@ class ManualTestModal(discord.ui.Modal, title="Manuális Teszt Rögzítés (LT3-
                 async with session.post(url, json=payload, headers=headers) as resp:
                     if resp.status in [200, 201]:
                         await interaction.followup.send(
-                            f"✅ Sikeresen rögzítve!\n* Játékos: `{self.minecraft_name.value}`\n* Játékmód: `{self.gamemode.value}`\n* Tier: `{self.tier.value.upper()}`\n* Eredmény: `{self.result.value}`",
+                            f"✅ Sikeresen rögzítve!\n* Játékos: `{self.minecraft_name.value}`\n* Játékmód: `{self.gamemode.value}`\n* Elért Tier: `{self.tier.value.upper()}`",
                             ephemeral=True
                         )
 
@@ -94,8 +87,7 @@ class ManualTestModal(discord.ui.Modal, title="Manuális Teszt Rögzítés (LT3-
                             ("Regulator / Teszter", f"{interaction.user.mention} (`{interaction.user.id}`)", False),
                             ("Játékos", f"`{self.minecraft_name.value}`", True),
                             ("Játékmód", f"`{self.gamemode.value}`", True),
-                            ("Tier", f"`{self.tier.value.upper()}`", True),
-                            ("Eredmény", f"`{self.result.value}`", True)
+                            ("Elért Tier", f"`{self.tier.value.upper()}`", True)
                         ]
                         await send_log(
                             interaction.client,
