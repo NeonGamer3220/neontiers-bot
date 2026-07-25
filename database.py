@@ -243,3 +243,14 @@ async def get_discord_by_minecraft_async(minecraft_name: str) -> int | None:
 async def unlink_minecraft_account_async(discord_id: int) -> bool:
     """Fiók szétkapcsolása aszinkron módon."""
     return await arun(db.unlink_account, discord_id)
+
+async def save_test_result_supabase(player_user: discord.Member, player_mc: str, gamemode: str, tier: str, tester_user: discord.Member, interaction: discord.Interaction):
+    """
+    Elmenti a teszt eredményt a Supabase adatbázisba.
+    Írd át vagy egészítsd ki a meglévő Supabase kliensed hívásaival a projektöd logikája szerint.
+    """
+    try:
+        pass
+    except Exception as e:
+        print(f"Hiba az eredmény mentésekor Supabase-be: {e}")
+        raise e
