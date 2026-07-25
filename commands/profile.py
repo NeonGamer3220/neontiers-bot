@@ -21,87 +21,86 @@ from database import (
 
 log = logging.getLogger("neontiers.commands.profile")
 
-# Legacy játékmódok kulcsai a szétválasztáshoz
 LEGACY_KEYS = {key.lower() for _, key, _ in LEGACY_TICKET_TYPES}
-
 
 class ProfileCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
     @app_commands.command(name="profile", description="Megtekintheted a saját vagy egy másik játékos profilját.")
-    @app_commands.describe(user="A játékos, akinek a profilját meg szeretnéd nézni (opcionális).")
-    async def profile(self, interaction: discord.Interaction, user: discord.User | None = None) -> None:
+    @app_commands.describe(
+        user="A Discord felhasználó, akinek a profilját meg szeretnéd nézni.",
+        minecraft_name="Vagy keresés közvetlenül Minecraft név alapján."
+    )
+    async def profile(
+        self, 
+        interaction: discord.Interaction, 
+        user: discord.User | None = None,
+        minecraft_name: str | None = None
+    ) -> None:
         await interaction.response.defer()
 
-        target_user = user or interaction.user
-        discord_id = target_user.id
+        target_user = user
+        mc_name = minecraft_name
+        discord_id = None
 
-        # 1. Minecraft név lekérése
-        mc_name = await get_linked_minecraft_name_async(discord_id)
+        if mc_name:
+            if db._client:
+                resp = db._client.table("linked_accounts").select("discord_id").ilike("minecraft_name", mc_name).execute()
+                if resp.data and len(resp.data) > 0:
+                    discord_id = resp.data[0].get("discord_id")
+        elif target_user:
+            discord_id = target_user.id
+            mc_name = await get_linked_minecraft_name_async(discord_id)
+        else:
+            target_user = interaction.user
+            discord_id = target_user.id
+            mc_name = await get_linked_minecraft_name_async(discord_id)
 
         if not mc_name:
-            if user:
-                await interaction.followup.send(
-                    f"❌ **{target_user.display_name}** nem kapcsolta össze a Discord fiókját egyetlen Minecraft fiókkal sem."
-                )
-            else:
-                await interaction.followup.send(
-                    "❌ Még nem kapcsoltad össze a Discord fiókodat! Használd a `/link` parancsot."
-                )
+            search_term = minecraft_name or (target_user.display_name if target_user else "Megadott felhasználó")
+            await interaction.followup.send(
+                f"❌ A(z) **{search_term}** játékoshoz tartozó összekapcsolt Minecraft fiók nem található!",
+                ephemeral=True
+            )
             return
 
-        # 2. Tesztek lekérése a `tests` táblából
-        user_tests = []
-        if db._client:
-            try:
-                def fetch_tests():
-                    resp = db._client.table("tests").select("*").ilike("username", mc_name).execute()
-                    return resp.data or []
+        display_discord_user = self.bot.get_user(discord_id) if discord_id else None
+        mention_str = display_discord_user.mention if display_discord_user else (f"<@{discord_id}>" if discord_id else "*Nincs Discord ID*")
 
-                user_tests = await arun(fetch_tests)
-            except Exception as exc:
-                log.error("Hiba a 'tests' tábla lekérésekor: %s", exc)
-
-        # 3. Embed összeállítása
         embed = discord.Embed(
-            title=f"🎮 {mc_name} Profilja",
-            color=discord.Color.blue()
+            title=f"👤 Játékos Profil: {mc_name}",
+            color=discord.Color.from_rgb(163, 136, 238)
         )
-        embed.set_thumbnail(url=f"https://mc-heads.net/avatar/{mc_name}/100")
-        embed.add_field(name="Discord azonosító", value=target_user.mention, inline=True)
-        embed.add_field(name="Minecraft név", value=f"`{mc_name}`", inline=True)
+        embed.add_field(name="Minecraft Név", value=f"`{mc_name}`", inline=True)
+        embed.add_field(name="Discord Fiók", value=mention_str, inline=True)
+        embed.set_thumbnail(url=f"https://minotar.net/helm/{mc_name}/256.png")
 
         modern_results = []
         legacy_results = []
 
-        if user_tests:
-            for test in user_tests:
-                if test.get("retired"):
-                    continue
+        if db._client:
+            try:
+                tests_resp = db._client.table("tests").select("*").ilike("username", mc_name).execute()
+                tests_data = tests_resp.data if tests_resp.data else []
+            except Exception as e:
+                log.error("Hiba a tesztek lekérdezésekor profilhoz: %s", e)
+                tests_data = []
 
-                mode = test.get("gamemode", "Ismeretlen")
-                rank = test.get("rank", "Unranked")
-                
-                # Normalizálás és Stick Fight külön kezelése
-                norm_mode = normalize_gamemode(mode)
-                if norm_mode.lower() in ["stick fight", "stickfight"]:
-                    norm_mode = "stickfight"
-                    display_name = "Stick Fight"
-                else:
-                    display_name = get_gamemode_display_name(norm_mode)
+            for row in tests_data:
+                raw_mode = row.get("gamemode", "")
+                rank = row.get("rank", "Unranked")
+                norm_mode = normalize_gamemode(raw_mode)
+                display_name = get_gamemode_display_name(raw_mode)
 
                 indicator = get_gamemode_indicator(norm_mode)
-
                 entry = f"{indicator} **{display_name}:** `{rank}`"
 
-                # Különválasztás: Legacy vagy Modern
                 if norm_mode in LEGACY_KEYS:
                     legacy_results.append(entry)
                 else:
                     modern_results.append(entry)
 
-        # Modern eredmények mező
         if modern_results:
             embed.add_field(
                 name="📊 Modern Tier Eredmények",
@@ -115,7 +114,6 @@ class ProfileCog(commands.Cog):
                 inline=False
             )
 
-        # Legacy eredmények mező (mindig megjelenik)
         if legacy_results:
             embed.add_field(
                 name="📜 Legacy Tier Eredmények",
