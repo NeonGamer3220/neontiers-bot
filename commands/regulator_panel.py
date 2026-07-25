@@ -157,7 +157,6 @@ class AddCooldownModal(discord.ui.Modal, title="Cooldown Hozzáadása (14 nap)")
         uid = self.discord_id.value.strip()
         gmode = self.gamemode.value.strip().lower()
         
-        # 14 nap múlva lejáró timestamp (float formátumban, mint a JSON-ben)
         expires_timestamp = time.time() + (14 * 24 * 60 * 60)
 
         cd_data = load_cooldowns()
@@ -210,7 +209,6 @@ class PlayerHistoryModal(discord.ui.Modal, title="Játékos Előélet Lekérdez�
             return
 
         tests = []
-        # 1. Tesztek lekérése Supabase-ből (ha van Minecraft név)
         if mc_name and SUPABASE_URL and SUPABASE_KEY:
             headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
             try:
@@ -222,7 +220,6 @@ class PlayerHistoryModal(discord.ui.Modal, title="Játékos Előélet Lekérdez�
             except Exception as e:
                 print(f"[HISTORY TESTS ERROR] {e}")
 
-        # 2. Cooldownok lekérése a tier_cooldowns.json fájrból (ha van Discord ID)
         user_cooldowns = {}
         if uid:
             cd_data = load_cooldowns()
@@ -235,18 +232,15 @@ class PlayerHistoryModal(discord.ui.Modal, title="Játékos Előélet Lekérdez�
         if uid:
             embed.add_field(name="Discord ID", value=f"`{uid}`", inline=True)
 
-        # Rangok formázása
         if tests:
             tests_str = "\n".join([f"• **{t['gamemode']}**: `{t['rank']}`" for t in tests])
             embed.add_field(name="Elért Rangok (Supabase)", value=tests_str, inline=False)
         elif mc_name:
             embed.add_field(name="Elért Rangok (Supabase)", value="*Nincsenek rögzített tesztek ezen a néven.*", inline=False)
 
-        # Cooldownok formázása
         if user_cooldowns:
             cd_lines = []
             for mode, timestamp in user_cooldowns.items():
-                # Timestamp konvertálása olvasható dátumra
                 dt = datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
                 dt_str = dt.strftime("%Y-%m-%d %H:%M")
                 cd_lines.append(f"• `{mode}` (Lejár: {dt_str} UTC)")
@@ -311,6 +305,40 @@ class RegulatorPanelView(discord.ui.View):
     async def staff_report_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(StaffReportModal())
 
+    # 3. Sor (Szabályzat & Súgó)
+    @discord.ui.button(label="📖 Szabályzat & Súgó", style=discord.ButtonStyle.primary, custom_id="reg_panel:rules", row=2)
+    async def rules_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="📖 NeoTiers Regulator Szabályzat & Útmutató",
+            description="Íme a hivatalos irányelvek és szabályok a regulatorok számára:",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="1. ⚖️ Általános Elvek és Etika",
+            value="• **Pártatlanság:** Minden játékost fair módon kell tesztelni.\n"
+                  "• **Segítőkészség:** Légy türelmes és korrekt a vizsgázókkal.\n"
+                  "• **Titoktartás:** A belső staff információkat szigorúan tilos kiadni.",
+            inline=False
+        )
+        embed.add_field(
+            name="2. 📝 Tesztelési és Rögzítési Szabályzat",
+            value="*(Ide írhatod majd be a saját szabályaidat, pl. LT3-as határ, ellenőrzések stb.)*",
+            inline=False
+        )
+        embed.add_field(
+            name="3. ⏱️ Cooldown Szabályok",
+            value="• **Időtartam:** A sikertelen tesztek utáni / büntetésből adott cooldown **automatikusan 14 nap**.\n"
+                  "• **Kezelés:** Csak indokolt esetben (admin hiba, egyeztetés) töröld vagy add hozzá manuálisan.",
+            inline=False
+        )
+        embed.add_field(
+            name="4. ⚠️ Hiba / Eltérés Jelentése",
+            value="• Ha hibás adatot találsz az adatbázisban, ne szerkeszd önhatalmúlag, hanem használd a panelen lévő **⚠️ Hiba Jelentése** gombot!",
+            inline=False
+        )
+        embed.set_footer(text="NeoTiers Management System")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 class RegulatorPanelCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -337,7 +365,8 @@ class RegulatorPanelCog(commands.Cog):
                         "• **🔍 Játékos Előélet:** Rangok és cooldownok lekérdezése.\n"
                         "• **📊 Saját Statisztika:** Eddigi elvégzett tesztjeid száma.\n"
                         "• **⏱️ Cooldown Hozzáadása:** 14 napos eltiltás rögzítése (JSON).\n"
-                        "• **⚠️ Hiba Jelentése:** Hibák vagy eltérések beküldése a logba.",
+                        "• **⚠️ Hiba Jelentése:** Hibák vagy eltérések beküldése a logba.\n"
+                        "• **📖 Szabályzat & Súgó:** A hivatalos szabályzat megtekintése.",
             color=discord.Color.dark_purple()
         )
         embed.set_footer(text="NeoTiers Management System")
@@ -355,7 +384,8 @@ class RegulatorPanelCog(commands.Cog):
                         "• **🔍 Játékos Előélet:** Rangok és cooldownok lekérdezése.\n"
                         "• **📊 Saját Statisztika:** Eddigi elvégzett tesztjeid száma.\n"
                         "• **⏱️ Cooldown Hozzáadása:** 14 napos eltiltás rögzítése (JSON).\n"
-                        "• **⚠️ Hiba Jelentése:** Hibák vagy eltérések beküldése a logba.",
+                        "• **⚠️ Hiba Jelentése:** Hibák vagy eltérések beküldése a logba.\n"
+                        "• **📖 Szabályzat & Súgó:** A hivatalos szabályzat megtekintése.",
             color=discord.Color.dark_purple()
         )
         embed.set_footer(text="NeoTiers Management System")
