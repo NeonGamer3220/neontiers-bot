@@ -68,7 +68,7 @@ class OpenQueuePanelView(discord.ui.View):
     def __init__(self, is_legacy: bool = False):
         super().__init__(timeout=None)
         self.is_legacy = is_legacy
-        types = LEGACY_TICKET_TYPES if is_legacy else TICKET_TYPES
+        types = LEGACY_TICKET_TYPES if is_legacy else ALL_TICKET_TYPES
         
         for label, key, emoji_raw in types[:25]:
             emoji_str = str(emoji_raw)
@@ -117,6 +117,18 @@ class TierSystemCog(commands.Cog):
         embed.set_footer(text="NeoTiers Legacy Management")
         await interaction.channel.send(embed=embed, view=OpenQueuePanelView(is_legacy=True))
         await interaction.response.send_message("✅ Legacy várólista panel sikeresen elhelyezve!", ephemeral=True)
+
+    @app_commands.command(name="hightestpanel", description="High Tier (HT) tesztelési panel kihelyezése.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def hightestpanel(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="🔥 NeonTiers High Tier (HT) Panel",
+            description="Válassz a lenyíló menüből játékmódot a magas szintű (HT3-HT1) tesztek indításához!",
+            color=discord.Color.gold()
+        )
+        embed.set_footer(text="NeoTiers High Tier Management")
+        await interaction.channel.send(embed=embed, view=OpenQueuePanelView(is_legacy=False))
+        await interaction.response.send_message("✅ High Tier panel sikeresen elhelyezve!", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
