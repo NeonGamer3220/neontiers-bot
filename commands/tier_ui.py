@@ -1,28 +1,21 @@
-import discord
-import os
-import json
-import time
-import asyncio
-import datetime
+"""
+NeonTiers Bot - Tier UI & Modals (commands/tier_ui.py)
+Legördülő menük, modális ablakok és gombok kezelése a kért limitkorlátozásokkal.
+"""
 
-from config import (
-    TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES,
-    REGULATOR_ROLE_ID, STAFF_ROLE_ID, TIER_RESULTS_CHANNEL_ID,
-    get_gamemode_display_name, POINTS
+import discord
+import asyncio
+import time
+from config import TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES, get_gamemode_display_name, STAFF_ROLE_ID, REGULATOR_ROLE_ID
+from commands.tier_utils import (
+    ACTIVE_QUEUES, VALID_HT_TIERS, get_ticket_category, 
+    update_queue_message, save_test_result_supabase, set_cooldown, check_timeout,
+    THEME_LIGHT_PURPLE
 )
 from commands.ban_enforcement import is_banned_by_role
-from database import get_linked_minecraft_name_async, supabase_select
+from database import get_linked_minecraft_name_async
 
-from .tier_utils import (
-    THEME_LIGHT_PURPLE, THEME_LIGHT_BLUE,
-    HT_TICKETS_FILE, ACTIVE_QUEUES, VALID_HT_TIERS, ALLOWED_QUEUE_TIERS,
-    save_test_result_supabase, get_cooldown, set_cooldown,
-    check_timeout, get_ticket_category, update_queue_message
-)
 
-# =========================================
-# TESZT EREDMÉNY RÖGZÍTŐ RENDSZER (MODAL)
-# =========================================
 class TierResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
     def __init__(self, player_id: int, player_mc: str, gamemode: str, tester_id: int, queue_ch_id: int = None):
         super().__init__()
@@ -51,9 +44,8 @@ class TierResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
         tester_user = interaction.user
 
         await save_test_result_supabase(player_user, self.player_mc, self.gamemode, tier, tester_user, interaction)
-        set_cooldown(self.player_id, self.gamemode, time.time())
+        set_cooldown(self.player_id, self.gamemode, 3600)
 
-        # Ha várólistáról jött, eltávolítjuk a játékost a sorból
         if self.queue_ch_id and self.queue_ch_id in ACTIVE_QUEUES:
             q_data = ACTIVE_QUEUES[self.queue_ch_id]
             q_data["players"] = [p for p in q_data["players"] if p["id"] != self.player_id]
@@ -68,9 +60,6 @@ class TierResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
         await interaction.followup.send(f"✅ Sikeresen rögzítve! Játékos: **{self.player_mc}** | Szint: **{tier}**", ephemeral=True)
 
 
-# =========================================
-# VÁRÓLISTA AKTÍV NÉZET (Gombokkal)
-# =========================================
 class QueueActiveView(discord.ui.View):
     def __init__(self, mode_key: str, tester_role: discord.Role):
         super().__init__(timeout=None)
@@ -170,3 +159,103 @@ class QueueActiveView(discord.ui.View):
             await interaction.channel.delete(reason=f"Várólista lezárva: {interaction.user.display_name}")
         except Exception:
             pass
+
+
+class PanelSelectView(discord.ui.View):
+    def __init__(self, mode_type: str, action_type: str):
+        super().__init__(timeout=None)
+        self.mode_type = mode_type
+        self.action_type = action_type
+        
+        types_list = LEGACY_TICKET_TYPES if mode_type.lower() == "legacy" else TICKET_TYPES
+        
+        options = []
+        for lbl, key, emoji in types_list[:25]:  # Biztosítva a Discord 25-ös limitje
+            emoji_str = str(emoji)
+            if emoji_str.isdigit():
+                emoji_str = f"<:{lbl.replace(' ', '')}:{emoji_str}>"
+            try:
+                options.append(discord.SelectOption(label=lbl, value=key, emoji=emoji_str if len(emoji_str) <= 20 else None))
+            except Exception:
+                options.append(discord.SelectOption(label=lbl, value=key))
+
+        if options:
+            self.add_item(PanelSelect(options, mode_type, action_type))
+
+
+class PanelSelect(discord.ui.Select):
+    def __init__(self, options, mode_type: str, action_type: str):
+        placeholders = {
+            "ping": f"Válassz értesítési kategóriát ({mode_type.upper()})...",
+            "queue": f"Válassz játékmódot a várólistához ({mode_type.upper()})...",
+            "hightest": f"Válassz High Tier tesztet ({mode_type.upper()})..."
+        }
+        super().__init__(
+            placeholder=placeholders.get(action_type, "Válassz..."),
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id=f"panel_{action_type}_{mode_type.lower()}"
+        )
+        self.action_type = action_type
+        self.mode_type = mode_type
+
+    async def callback(self, interaction: discord.Interaction):
+        key = self.values[0]
+        label = get_gamemode_display_name(key)
+        is_legacy = (self.mode_type.lower() == "legacy")
+
+        if self.action_type == "ping":
+            await interaction.response.send_message(f"✅ Sikeresen feliratkoztál / módosítottad a pinget ehhez: **{label}** ({self.mode_type})!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        category = get_ticket_category(guild, is_legacy)
+        
+        tester_role_name = f"{label} Tester"
+        tester_role = discord.utils.get(guild.roles, name=tester_role_name)
+
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True)
+        }
+        if tester_role:
+            overwrites[tester_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+
+        try:
+            queue_chan = await guild.create_text_channel(
+                name=f"queue-{key.lower()}",
+                category=category,
+                overwrites=overwrites,
+                topic=f"NeonTiers Várólista - {label} ({self.mode_type})"
+            )
+        except Exception as e:
+            return await interaction.followup.send(f"❌ Nem sikerült csatornát létrehozni: `{e}`", ephemeral=True)
+
+        queue_role = discord.utils.get(guild.roles, name=f"{label} Queue")
+        q_ping = queue_role.mention if queue_role else f"@{label} Queue"
+
+        ACTIVE_QUEUES[queue_chan.id] = {
+            "players": [], 
+            "testers": [interaction.user.id], 
+            "gamemode": key,
+            "msg_id": None
+        }
+
+        emoji_str = "🎮"
+        for l, k, e in ALL_TICKET_TYPES:
+            if k == key:
+                emoji_str = str(e)
+                break
+
+        desc = f"**Helyek:** 0/20\n\n**Játékosok a várólistán:**\n*- Üres -*\n\n**Aktív Teszterek:**\n🛡️ <@{interaction.user.id}>\n"
+        embed = discord.Embed(
+            title=f"{emoji_str} {label} Várólista ({self.mode_type})", 
+            description=desc, 
+            color=discord.Color(THEME_LIGHT_PURPLE)
+        )
+        
+        msg = await queue_chan.send(content=f"🔔 {q_ping}", embed=embed, view=QueueActiveView(key, tester_role))
+        ACTIVE_QUEUES[queue_chan.id]["msg_id"] = msg.id
+        await interaction.followup.send(f"✅ Várólista csatorna sikeresen megnyitva: {queue_chan.mention}", ephemeral=True)
