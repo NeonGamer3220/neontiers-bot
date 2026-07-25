@@ -4,12 +4,61 @@ from discord import app_commands
 import aiohttp
 import datetime
 import time
-from config import SUPABASE_URL, SUPABASE_KEY, LOG_CHANNEL_ID
+from config import SUPABASE_URL, SUPABASE_KEY, LOG_CHANNEL_ID, MODERN_RESULT_CHANNEL_ID, LEGACY_RESULT_CHANNEL_ID
 
 REGULATOR_ROLE_NAME = "Regulator"  # Szükség esetén módosítható a rang neve
 
+async def send_test_announcements(bot: discord.Client, username: str, gamemode: str, rank: str, tester: discord.User):
+    """Elküldi a teszt eredményt a modern és a legacy eredmény csatornákba is tiszta formátumban"""
+    
+    # 1. Modern eredmény csatorna
+    if MODERN_RESULT_CHANNEL_ID:
+        try:
+            channel = bot.get_channel(MODERN_RESULT_CHANNEL_ID)
+            if not channel:
+                channel = await bot.fetch_channel(MODERN_RESULT_CHANNEL_ID)
+            
+            if channel:
+                embed = discord.Embed(
+                    title="🏆 Új Tier Teszt Eredmény",
+                    color=discord.Color.blue(),
+                    timestamp=datetime.datetime.now(datetime.timezone.utc)
+                )
+                embed.add_field(name="Játékos", value=f"`{username}`", inline=True)
+                embed.add_field(name="Játékmód", value=f"`{gamemode}`", inline=True)
+                embed.add_field(name="Elért Rank", value=f"**{rank}**", inline=True)
+                embed.add_field(name="Teszter", value=tester.mention, inline=False)
+                embed.set_footer(text="NeoTiers Official Tiers")
+                
+                await channel.send(embed=embed)
+        except Exception as e:
+            print(f"[MODERN RESULT ERROR] Nem sikerült elküldeni: {e}")
+
+    # 2. Legacy eredmény csatorna
+    if LEGACY_RESULT_CHANNEL_ID:
+        try:
+            channel = bot.get_channel(LEGACY_RESULT_CHANNEL_ID)
+            if not channel:
+                channel = await bot.fetch_channel(LEGACY_RESULT_CHANNEL_ID)
+            
+            if channel:
+                embed = discord.Embed(
+                    title="🏆 Új Tier Teszt Eredmény (Legacy)",
+                    color=discord.Color.dark_blue(),
+                    timestamp=datetime.datetime.now(datetime.timezone.utc)
+                )
+                embed.add_field(name="Játékos", value=f"`{username}`", inline=True)
+                embed.add_field(name="Játékmód", value=f"`{gamemode}`", inline=True)
+                embed.add_field(name="Elért Rank", value=f"**{rank}**", inline=True)
+                embed.add_field(name="Teszter", value=tester.mention, inline=False)
+                embed.set_footer(text="NeoTiers Legacy Tiers")
+                
+                await channel.send(embed=embed)
+        except Exception as e:
+            print(f"[LEGACY RESULT ERROR] Nem sikerült elküldeni: {e}")
+
 async def send_log(bot: discord.Client, title: str, description: str, color: discord.Color, fields: list = None):
-    """Segédfüggvény a logok elküldéséhez a megadott csatornába"""
+    """Segédfüggvény a belső staff audit logokhoz"""
     if not LOG_CHANNEL_ID:
         return
     try:
@@ -51,6 +100,12 @@ class ManualTestModal(discord.ui.Modal, title="Manuális Teszt Rögzítés (LT3-
         required=True,
         max_length=10
     )
+    is_public = discord.ui.TextInput(
+        label="Publikus? (igen / nem)",
+        placeholder="igen vagy nem",
+        required=True,
+        max_length=3
+    )
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True, ephemeral=True)
@@ -66,14 +121,19 @@ class ManualTestModal(discord.ui.Modal, title="Manuális Teszt Rögzítés (LT3-
             "Prefer": "return=minimal"
         }
 
-        # Egyedi bigint ID generálása az időbélyeg alapján
         unique_id = int(time.time() * 1000)
+        clean_username = self.minecraft_name.value.strip()
+        clean_gamemode = self.gamemode.value.strip().lower()
+        clean_rank = self.tier.value.strip().upper()
+        
+        public_val = self.is_public.value.strip().lower()
+        is_pub = public_val in ["igen", "i", "yes", "y"]
 
         payload = {
             "id": unique_id,
-            "username": self.minecraft_name.value.strip(),
-            "gamemode": self.gamemode.value.strip().lower(),
-            "rank": self.tier.value.strip().upper(),
+            "username": clean_username,
+            "gamemode": clean_gamemode,
+            "rank": clean_rank,
             "tester_id": str(interaction.user.id),
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
@@ -83,21 +143,28 @@ class ManualTestModal(discord.ui.Modal, title="Manuális Teszt Rögzítés (LT3-
                 url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/tests"
                 async with session.post(url, json=payload, headers=headers) as resp:
                     if resp.status in [200, 201]:
+                        # 1. Válasz a regulatornak
                         await interaction.followup.send(
-                            f"✅ Sikeresen rögzítve!\n* Játékos: `{self.minecraft_name.value}`\n* Játékmód: `{self.gamemode.value}`\n* Elért Rank: `{self.tier.value.upper()}`",
+                            f"✅ Sikeresen rögzítve!\n* Játékos: `{clean_username}`\n* Játékmód: `{clean_gamemode}`\n* Elért Rank: `{clean_rank}`\n* Publikus: `{'Igen' if is_pub else 'Nem'}`",
                             ephemeral=True
                         )
 
+                        # 2. Eredmények küldése a csatornákba CSAK HA publikus
+                        if is_pub:
+                            await send_test_announcements(interaction.client, clean_username, clean_gamemode, clean_rank, interaction.user)
+
+                        # 3. Belső staff audit log
                         fields = [
                             ("Regulator / Teszter", f"{interaction.user.mention} (`{interaction.user.id}`)", False),
-                            ("Játékos", f"`{self.minecraft_name.value}`", True),
-                            ("Játékmód", f"`{self.gamemode.value}`", True),
-                            ("Elért Rank", f"`{self.tier.value.upper()}`", True)
+                            ("Játékos", f"`{clean_username}`", True),
+                            ("Játékmód", f"`{clean_gamemode}`", True),
+                            ("Elért Rank", f"`{clean_rank}`", True),
+                            ("Publikus", f"{'Igen' if is_pub else 'Nem'}", True)
                         ]
                         await send_log(
                             interaction.client,
                             "📝 Manuális Teszt Rögzítve",
-                            f"Egy regulator manuálisan rögzített egy tesztet.",
+                            f"Egy regulator manuálisan rögzített egy tesztet az adatbázisba.",
                             discord.Color.green(),
                             fields
                         )
