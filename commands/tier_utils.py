@@ -24,6 +24,7 @@ THEME_LIGHT_BLUE = 0x3498db
 ACTIVE_QUEUES = {}  # queue_ch_id: { "players": [...], "testers": [...], "gamemode": ..., "msg_id": ... }
 INACTIVE_TICKETS = {} # channel_id: { "owner_id": ..., "warned": bool, "warn_time": ... }
 VALID_HT_TIERS = ["HT1", "HT2", "HT3", "HT4", "HT5", "LT1", "LT2", "LT3", "LT4", "LT5"]
+ALLOWED_QUEUE_TIERS = ["UNRANKED", "LT5", "HT5", "LT4", "HT4", "LT3"]  # Sima várólista tesztből max LT3 adható, e felett a tierlist weboldalán kell rögzíteni
 HIGHTEST_OPTIONS = [
     ("High Test - HT1", "HT1", "⚔️"),
     ("High Test - HT2", "HT2", "⚔️"),

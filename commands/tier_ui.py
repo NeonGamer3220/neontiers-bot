@@ -8,7 +8,7 @@ import asyncio
 import time
 from config import TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES, get_gamemode_display_name, STAFF_ROLE_ID, REGULATOR_ROLE_ID, RANKS
 from commands.tier_utils import (
-    ACTIVE_QUEUES, INACTIVE_TICKETS, VALID_HT_TIERS,
+    ACTIVE_QUEUES, INACTIVE_TICKETS, VALID_HT_TIERS, ALLOWED_QUEUE_TIERS,
     get_ticket_category, get_queue_category, update_queue_message, 
     set_cooldown, check_timeout, THEME_LIGHT_PURPLE, archive_channel
 )
@@ -55,7 +55,7 @@ class HighTestNoteModal(discord.ui.Modal, title="Megjegyzés Beküldése"):
         await interaction.followup.send("✅ Megjegyzés sikeresen beküldve a ticketbe!", ephemeral=True)
 
 
-class HighTestResultModal(discord.ui.Modal, title="High Test Eredmény Rögzítése"):
+class HighTestSuggestionModal(discord.ui.Modal, title="Tier Javaslat Beküldése"):
     def __init__(self, player_id: int, player_mc: str, gamemode: str):
         super().__init__()
         self.player_id = player_id
@@ -63,12 +63,19 @@ class HighTestResultModal(discord.ui.Modal, title="High Test Eredmény Rögzít�
         self.gamemode = gamemode
 
         self.tier_input = discord.ui.TextInput(
-            label="Elért Szint (Tier)",
-            placeholder="pl. LT2, HT1, Unranked",
+            label="Javasolt Tier",
+            placeholder="pl. LT2, HT1",
             required=True,
             max_length=20
         )
+        self.note_input = discord.ui.TextInput(
+            label="Megjegyzés / Indoklás (opcionális)",
+            style=discord.TextStyle.paragraph,
+            required=False,
+            max_length=1000
+        )
         self.add_item(self.tier_input)
+        self.add_item(self.note_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -76,29 +83,26 @@ class HighTestResultModal(discord.ui.Modal, title="High Test Eredmény Rögzít�
         if tier not in VALID_HT_TIERS and tier != "UNRANKED":
             return await interaction.followup.send(f"❌ Érvénytelen tier formátum: `{tier}`. Használhatók: HT1-LT5, Unranked", ephemeral=True)
 
-        guild = interaction.guild
-        player_user = guild.get_member(self.player_id) or await guild.fetch_member(self.player_id)
-        tester_user = interaction.user
+        note_text = self.note_input.value.strip()
+        user = interaction.user
 
-        try:
-            await save_test_result_supabase(player_user, self.player_mc, get_gamemode_display_name(self.gamemode), tier, tester_user, interaction)
-        except Exception:
-            pass
-
-        set_cooldown(self.player_id, self.gamemode, 14 * 24 * 3600)
+        embed = discord.Embed(
+            title=f"📊 Tier Javaslat ({get_gamemode_display_name(self.gamemode)})",
+            color=discord.Color.purple()
+        )
+        embed.add_field(name="Játékos", value=f"<@{self.player_id}> (**{self.player_mc}**)", inline=False)
+        embed.add_field(name="Javasolt Tier", value=f"**{tier}**", inline=True)
+        if note_text:
+            embed.add_field(name="Megjegyzés", value=note_text, inline=False)
+        embed.set_footer(text=f"Javasolta: {user.display_name} | Ellenőrzésre vár egy Regulátortól")
 
         if interaction.channel.id in INACTIVE_TICKETS:
-            del INACTIVE_TICKETS[interaction.channel.id]
+            INACTIVE_TICKETS[interaction.channel.id]["last_activity"] = time.time()
+            INACTIVE_TICKETS[interaction.channel.id]["warned"] = False
 
-        await interaction.followup.send(f"✅ Sikeresen rögzítve! Játékos: **{self.player_mc}** | Szint: **{tier}**", ephemeral=True)
-
-        await archive_channel(interaction.channel, tester_user, reason=f"High Test eredmény rögzítve: {tier}")
-
-        await asyncio.sleep(3)
-        try:
-            await interaction.channel.delete(reason=f"High Test lezárva: {tester_user.display_name}")
-        except Exception:
-            pass
+        reg_ping = f"<@&{REGULATOR_ROLE_ID}>" if REGULATOR_ROLE_ID else ""
+        await interaction.channel.send(content=(reg_ping or None), embed=embed)
+        await interaction.followup.send("✅ Tier javaslat beküldve! Egy Regulátornak ellenőriznie és a tierlist weboldalán rögzítenie kell.", ephemeral=True)
 
 
 class HighTestTicketView(discord.ui.View):
@@ -108,21 +112,9 @@ class HighTestTicketView(discord.ui.View):
         self.player_mc = player_mc
         self.gamemode = gamemode
 
-    @discord.ui.button(label="📝 Eredmény Rögzítése", style=discord.ButtonStyle.green, custom_id="hightest_record_result")
-    async def record_result(self, interaction: discord.Interaction, button: discord.ui.Button):
-        is_staff = interaction.user.guild_permissions.administrator or any(r.id in [STAFF_ROLE_ID, REGULATOR_ROLE_ID] for r in interaction.user.roles)
-        if not is_staff:
-            return await interaction.response.send_message("❌ Csak teszterek vagy regulatorok rögzíthetnek eredményt!", ephemeral=True)
-        modal = HighTestResultModal(
-            player_id=self.player_id,
-            player_mc=self.player_mc,
-            gamemode=self.gamemode
-        )
-        await interaction.response.send_modal(modal)
-
-    @discord.ui.button(label="💬 Megjegyzés", style=discord.ButtonStyle.blurple, custom_id="hightest_note_btn")
-    async def add_note(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = HighTestNoteModal(
+    @discord.ui.button(label="📝 Tier Javaslat", style=discord.ButtonStyle.green, custom_id="hightest_suggest_btn")
+    async def suggest_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = HighTestSuggestionModal(
             player_id=self.player_id,
             player_mc=self.player_mc,
             gamemode=self.gamemode
@@ -166,8 +158,11 @@ class TestResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         tier = self.tier_input.value.strip().upper()
-        if tier not in VALID_HT_TIERS and tier != "UNRANKED":
-            return await interaction.followup.send(f"❌ Érvénytelen tier formátum: `{tier}`. Használhatók: HT1-LT5, Unranked", ephemeral=True)
+        if tier not in ALLOWED_QUEUE_TIERS:
+            return await interaction.followup.send(
+                "❌ Várólista tesztből **maximum LT3** adható. Ha ennél magasabb szintet ért el a játékos, nyiss neki egy **High Test** kérelmet a megfelelő módban!",
+                ephemeral=True
+            )
 
         guild = interaction.guild
         player_user = guild.get_member(self.player_id) or await guild.fetch_member(self.player_id)
