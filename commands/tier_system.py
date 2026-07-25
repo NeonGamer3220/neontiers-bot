@@ -1,236 +1,189 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord import app_commands
-import os
-import json
+import aiohttp
+import datetime
 import time
-import asyncio
-from typing import Literal
+import json
+import os
+from config import SUPABASE_URL, SUPABASE_KEY, MODERN_RESULT_CHANNEL_ID, LEGACY_RESULT_CHANNEL_ID
 
-from config import ALL_TICKET_TYPES, REGULATOR_ROLE_ID
+TESTER_ROLE_NAMES = ["Tester", "Regulator", "Manager", "Admin"]
+COOLDOWN_FILE = "tier_cooldowns.json"
+COOLDOWN_DAYS = 14
 
-from commands.tier_utils import (
-    THEME_LIGHT_PURPLE, THEME_LIGHT_BLUE, MODE_COLORS,
-    HT_TICKETS_FILE, COOLDOWN_FILE
-)
-from commands.tier_ui import (
-    PingPanelView, OpenQueuePanelView, HTPanelView
-)
+def load_cooldowns():
+    if not os.path.exists(COOLDOWN_FILE):
+        return {}
+    try:
+        with open(COOLDOWN_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
-# ==========================================
-# RENDSZER COG ÉS PARANCSOK
-# ==========================================
+def save_cooldowns(data):
+    try:
+        with open(COOLDOWN_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"[COOLDOWN SAVE ERROR] {e}")
+
+GAMEMODES = [
+    "Vanilla", "DiaSMP", "OGV", "NethPot", "Mace", "SMP", "Cart", 
+    "SpearMace", "SpearElytra", "Trident", "Sword", "Uhc", "Pot", 
+    "Creeper", "ShieldlessUHC", "Axe"
+]
+
+TIERS = [
+    "HT1", "LT1", "HT2", "LT2", "HT3", "LT3", 
+    "HT4", "LT4", "HT5", "LT5", "FT3", "FT4", "FT5", "FT6", "FT10", "FT20", "Retire"
+]
+
 class TierSystemCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.ht_auto_close_task.start()
 
-    def cog_unload(self):
-        self.ht_auto_close_task.cancel()
+    async def check_tester_permissions(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.guild_permissions.administrator:
+            return True
+        has_role = any(role.name in TESTER_ROLE_NAMES for role in interaction.user.roles)
+        if not has_role:
+            await interaction.response.send_message("❌ Nincs jogosultságod a tesztek levezetéséhez és rangosztáshoz (szükséges rang: **Tester** vagy **Regulator**).", ephemeral=True)
+            return False
+        return True
 
-    @tasks.loop(minutes=30)
-    async def ht_auto_close_task(self):
-        if not os.path.exists(HT_TICKETS_FILE): return
-        try:
-            with open(HT_TICKETS_FILE, "r") as f: data = json.load(f)
-            now = time.time()
-            to_delete = []
-            
-            for ch_id_str, info in data.items():
-                if info.get("forcekeep"): continue
-                
-                channel = self.bot.get_channel(int(ch_id_str))
-                if not channel:
-                    to_delete.append(ch_id_str)
-                    continue
+    @app_commands.command(name="give-tier", description="Tier megadása egy játékosnak teszt után.")
+    @app_commands.describe(
+        discord_user="A játékos Discord felhasználója",
+        minecraft_name="A játékos pontos Minecraft neve",
+        gamemode="A játékmód, amiben a teszt történt",
+        tier="Az elért tier / rang",
+        is_public="Publikus kihirdetés legyen-e (igen/nem)"
+    )
+    @app_commands.choices(gamemode=[app_commands.Choice(name=mode, value=mode) for mode in GAMEMODES])
+    @app_commands.choices(tier=[app_commands.Choice(name=t, value=t) for t in TIERS])
+    @app_commands.choices(is_public=[
+        app_commands.Choice(name="Igen (Kihirdetés a csatornán)", value="yes"),
+        app_commands.Choice(name="Nem (Csak adatbázis mentés)", value="no")
+    ])
+    async def give_tier(
+        self, 
+        interaction: discord.Interaction, 
+        discord_user: discord.Member, 
+        minecraft_name: str, 
+        gamemode: str, 
+        tier: str, 
+        is_public: str
+    ):
+        if not await self.check_tester_permissions(interaction):
+            return
 
-                last_msg_time = info.get("last_msg_time", 0)
-                time_passed = now - last_msg_time
-                
-                if time_passed > (44 * 3600) and not info.get("warned"):
-                    await channel.send(f"<@{info['owner_id']}> ⚠️ **Figyelem!** 4 óra múlva inaktivitás miatt automatikusan lezárul a csatorna. Írj egy üzenetet az újraindításhoz!")
-                    info["warned"] = True
-                    
-                elif time_passed > (48 * 3600):
-                    await channel.send("🔒 48 óra inaktivitás telt el. A csatorna bezárul...")
-                    await asyncio.sleep(3)
-                    await channel.delete()
-                    to_delete.append(ch_id_str)
+        await interaction.response.defer(thinking=True, ephemeral=True)
 
-            for d in to_delete: del data[d]
-            with open(HT_TICKETS_FILE, "w") as f: json.dump(data, f)
-        except: pass
+        uid = str(discord_user.id)
+        gmode = gamemode.lower()
+        now = time.time()
 
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        if message.author.bot: return
-        if ("ht-" in message.channel.name or "teszt-" in message.channel.name or "ticket-" in message.channel.name) and os.path.exists(HT_TICKETS_FILE):
-            try:
-                with open(HT_TICKETS_FILE, "r") as f: data = json.load(f)
-                ch_id = str(message.channel.id)
-                if ch_id in data:
-                    data[ch_id]["last_msg_time"] = time.time()
-                    data[ch_id]["warned"] = False
-                    with open(HT_TICKETS_FILE, "w") as f: json.dump(data, f)
-            except: pass
+        # Cooldown ellenőrzés (14 nap)
+        cd_data = load_cooldowns()
+        if uid in cd_data and gmode in cd_data[uid]:
+            expires_at = cd_data[uid][gmode]
+            if now < expires_at:
+                remaining_days = math.ceil((expires_at - now) / (24 * 60 * 60))
+                await interaction.followup.send(
+                    f"❌ Ennek a játékosnak még aktív cooldown-ja van a(z) `{gamemode}` játékmódban!\n"
+                    f"Még **{remaining_days} nap** van hátra az újratesztelésig.",
+                    ephemeral=True
+                )
+                return
 
-    @app_commands.command(name="pingpanel", description="Lerakja a Queue Ping kérő panelt.")
-    @app_commands.describe(panel_type="Melyik játékmódokat szeretnéd látni?")
-    async def pingpanel(self, interaction: discord.Interaction, panel_type: Literal['Modern', 'Legacy', 'All']):
-        if not interaction.user.guild_permissions.administrator: return await interaction.response.send_message("❌ Nincs jogosultságod!", ephemeral=True)
-        embed = discord.Embed(
-            title="🔔 Queue Értesítések", 
-            description="Kattints a gombokra, hogy megkapd az adott játékmód várólista értesítő rangját!", 
-            color=discord.Color(THEME_LIGHT_BLUE)
-        )
-        await interaction.channel.send(embed=embed, view=PingPanelView(panel_type))
-        await interaction.response.send_message("✅ Panel lerakva!", ephemeral=True)
+        # Supabase mentés
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            await interaction.followup.send("❌ Adatbázis hiba: Hiányzó Supabase konfiguráció.", ephemeral=True)
+            return
 
-    @app_commands.command(name="queuepanel", description="Lerakja a Teszter Várólista nyitó panelt.")
-    @app_commands.describe(panel_type="Melyik játékmódokat szeretnéd látni?")
-    async def queuepanel(self, interaction: discord.Interaction, panel_type: Literal['Modern', 'Legacy', 'All']):
-        if not interaction.user.guild_permissions.administrator: return await interaction.response.send_message("❌ Nincs jogosultságod!", ephemeral=True)
-        embed = discord.Embed(
-            title="🛡️ Teszt Várólista Megnyitása", 
-            description="Teszterként kattints a játékmódra a várólista megnyitásához az adott csatornában!", 
-            color=discord.Color(THEME_LIGHT_PURPLE)
-        )
-        await interaction.channel.send(embed=embed, view=OpenQueuePanelView(panel_type))
-        await interaction.response.send_message("✅ Panel lerakva!", ephemeral=True)
-
-    @app_commands.command(name="hightestpanel", description="Lerakja a Magas Tier Kérelem panelt.")
-    @app_commands.describe(panel_type="Melyik játékmódokat szeretnéd látni?")
-    async def hightestpanel(self, interaction: discord.Interaction, panel_type: Literal['Modern', 'Legacy', 'All']):
-        if not interaction.user.guild_permissions.administrator: return await interaction.response.send_message("❌ Nincs jogosultságod!", ephemeral=True)
-        
-        embed = discord.Embed(
-            title="**Magas Tier Teszt Igénylés**",
-            description=(
-                "HT3 vagy magasabb teszthez nyiss magas tier kérelmet. A megnyitás előtt elkérem és ellenőrzöm az eredeti Minecraft nevedet.\n\n"
-                "**Fontos**\nMagas tier kérelemből egyszerre legfeljebb 12 nyitott lehet.\n\n"
-                "**Automatikus lezárás**\nBármilyen emberi üzenet újraindítja a 48 órás inaktivitási számlálót. Automatikus zárás előtt 4 órával figyelmeztetést küldök és megpingelem a nyitót."
-            ),
-            color=discord.Color(THEME_LIGHT_PURPLE)
-        )
-        await interaction.channel.send(embed=embed, view=HTPanelView(panel_type))
-        await interaction.response.send_message("✅ Panel lerakva!", ephemeral=True)
-
-    @app_commands.command(name="setup", description="Létrehozza a Teszter/Queue rangokat és csatornákat két kategóriában.")
-    async def setup_cmd(self, interaction: discord.Interaction, modern_kategoria: discord.CategoryChannel, legacy_kategoria: discord.CategoryChannel):
-        if not interaction.user.guild_permissions.administrator:
-            return await interaction.response.send_message("❌ Csak Adminoknak!", ephemeral=True)
-            
-        await interaction.response.defer()
-        guild = interaction.guild
+        headers = {
+            "apikey": SUPABASE_KEY, 
+            "Authorization": f"Bearer {SUPABASE_KEY}", 
+            "Content-Type": "application/json", 
+            "Prefer": "return=minimal"
+        }
+        unique_id = int(now * 1000)
+        payload = {
+            "id": unique_id,
+            "username": minecraft_name.strip(),
+            "gamemode": gmode,
+            "rank": tier,
+            "tester_id": str(interaction.user.id),
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
 
         try:
-            for label, key, _ in ALL_TICKET_TYPES:
-                color_hex = MODE_COLORS.get(key.lower(), 0x3498db)
-                role_color = discord.Color(color_hex)
-                
-                tester_name = f"{label} Teszter"
-                queue_name = f"{label} Queue"
-                
-                if not discord.utils.get(guild.roles, name=tester_name):
-                    await guild.create_role(name=tester_name, color=role_color)
-                if not discord.utils.get(guild.roles, name=queue_name):
-                    await guild.create_role(name=queue_name, mentionable=True, color=role_color)
-                
-                await asyncio.sleep(0.5)
-
-            await interaction.followup.send("✅ Rendszer sikeresen telepítve: Rangok létrehozva!")
+            async with aiohttp.ClientSession() as session:
+                url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/tests"
+                async with session.post(url, json=payload, headers=headers) as resp:
+                    if resp.status not in [200, 201]:
+                        err = await resp.text()
+                        await interaction.followup.send(f"❌ Nem sikerült menteni az adatbázisba: {err}", ephemeral=True)
+                        return
         except Exception as e:
-            await interaction.followup.send(f"❌ Hiba történt a setup közben: `{e}`")
+            await interaction.followup.send(f"❌ Hiba történt a mentés során: {str(e)}", ephemeral=True)
+            return
 
-    @app_commands.command(name="revertsetup", description="Törli az összes setup által létrehozott rangot.")
-    async def revertsetup_cmd(self, interaction: discord.Interaction):
-        if not interaction.user.guild_permissions.administrator:
-            return await interaction.response.send_message("❌ Csak Adminoknak!", ephemeral=True)
-            
-        await interaction.response.defer()
-        guild = interaction.guild
+        # Cooldown beállítása a következő 14 napra
+        if uid not in cd_data:
+            cd_data[uid] = {}
+        cd_data[uid][gmode] = now + (COOLDOWN_DAYS * 24 * 60 * 60)
+        save_cooldowns(cd_data)
 
-        try:
-            for label, key, _ in ALL_TICKET_TYPES:
-                tester_name = f"{label} Teszter"
-                queue_name = f"{label} Queue"
-                
-                tester_role = discord.utils.get(guild.roles, name=tester_name)
-                if tester_role: await tester_role.delete()
-                
-                queue_role = discord.utils.get(guild.roles, name=queue_name)
-                if queue_role: await queue_role.delete()
-                
-                await asyncio.sleep(0.5)
+        # Sikeres válasz a teszternek
+        await interaction.followup.send(
+            f"✅ A tier sikeresen rögzítve!\n"
+            f"• **Játékos:** `{minecraft_name}` ({discord_user.mention})\n"
+            f"• **Játékmód:** `{gamemode}`\n"
+            f"• **Elért Tier:** `**{tier}**`\n"
+            f"• **Cooldown:** Beállítva 14 napra.",
+            ephemeral=True
+        )
 
-            await interaction.followup.send("✅ Setup sikeresen visszavonva: Minden generált rang törölve!")
-        except Exception as e:
-            await interaction.followup.send(f"❌ Hiba történt a revert közben: `{e}`")
+        # Nyilvános eredmény kihirdetés (ha az "igen"-t választotta)
+        if is_public == "yes":
+            if MODERN_RESULT_CHANNEL_ID:
+                try:
+                    channel = self.bot.get_channel(MODERN_RESULT_CHANNEL_ID) or await self.bot.fetch_channel(MODERN_RESULT_CHANNEL_ID)
+                    if channel:
+                        embed = discord.Embed(
+                            title="🏆 Új Tier Teszt Eredmény", 
+                            color=discord.Color.blue(), 
+                            timestamp=datetime.datetime.now(datetime.timezone.utc)
+                        )
+                        embed.add_field(name="Játékos", value=f"`{minecraft_name}` ({discord_user.mention})", inline=True)
+                        embed.add_field(name="Játékmód", value=f"`{gamemode}`", inline=True)
+                        embed.add_field(name="Elért Rank", value=f"**{tier}**", inline=True)
+                        embed.add_field(name="Teszter", value=interaction.user.mention, inline=False)
+                        embed.set_footer(text="NeoTiers Official Tiers")
+                        await channel.send(embed=embed)
+                except Exception as e:
+                    print(f"[MODERN RESULT ERROR] {e}")
 
-    @app_commands.command(name="forcekeep", description="Megakadályozza a ticket automatikus törlését (Regulator).")
-    async def forcekeep(self, interaction: discord.Interaction):
-        if not any(r.id == REGULATOR_ROLE_ID for r in interaction.user.roles) and not interaction.user.guild_permissions.administrator:
-            return await interaction.response.send_message("❌ Nincs jogosultságod!", ephemeral=True)
-            
-        try:
-            with open(HT_TICKETS_FILE, "r") as f: data = json.load(f)
-            ch_id = str(interaction.channel.id)
-            if ch_id in data:
-                data[ch_id]["forcekeep"] = True
-                with open(HT_TICKETS_FILE, "w") as f: json.dump(data, f)
-                await interaction.response.send_message("🛡️ Automatikus törlés kikapcsolva erre a ticketre.")
-            else:
-                await interaction.response.send_message("❌ Ez nem egy regisztrált ticket.", ephemeral=True)
-        except: pass
-
-    @app_commands.command(name="ticketadd", description="Ember hozzáadása a tickethez.")
-    async def tadd(self, interaction: discord.Interaction, tag: discord.Member):
-        if not interaction.user.guild_permissions.administrator and not any(r.id == REGULATOR_ROLE_ID for r in interaction.user.roles): return
-        await interaction.channel.set_permissions(tag, view_channel=True, send_messages=True)
-        await interaction.response.send_message(f"✅ {tag.mention} hozzáadva a csatornához.")
-
-    @app_commands.command(name="ticketremove", description="Ember eltávolítása a ticketből.")
-    async def trem(self, interaction: discord.Interaction, tag: discord.Member):
-        if not interaction.user.guild_permissions.administrator and not any(r.id == REGULATOR_ROLE_ID for r in interaction.user.roles): return
-        await interaction.channel.set_permissions(tag, overwrite=None)
-        await interaction.response.send_message(f"✅ {tag.mention} eltávolítva a csatornából.")
-
-    @app_commands.command(name="resetcooldown", description="Alaphelyzetbe állítja egy játékos 14 napos tesztelési cooldownját.")
-    @app_commands.describe(tag="A játékos", gamemode="Játékmód (pl. sword, mace)")
-    async def resetcooldown(self, interaction: discord.Interaction, tag: discord.Member, gamemode: str):
-        if not interaction.user.guild_permissions.administrator and not any(r.id == REGULATOR_ROLE_ID for r in interaction.user.roles):
-            return await interaction.response.send_message("❌ Nincs jogosultságod ehhez a parancshoz!", ephemeral=True)
-        
-        mode_key = gamemode.lower().strip()
-        
-        try:
-            if os.path.exists(COOLDOWN_FILE):
-                with open(COOLDOWN_FILE, "r") as f:
-                    data = json.load(f)
-                
-                p_id = str(tag.id)
-                if p_id in data and mode_key in data[p_id]:
-                    del data[p_id][mode_key]
-                    if not data[p_id]: del data[p_id]
-                        
-                    with open(COOLDOWN_FILE, "w") as f: json.dump(data, f)
-                    await interaction.response.send_message(f"✅ Sikeresen törölted {tag.mention} cooldownját a(z) `{mode_key}` játékmódban!", ephemeral=True)
-                else:
-                    await interaction.response.send_message(f"❌ {tag.mention} játékosnak nincs aktív cooldownja a(z) `{mode_key}` játékmódban.", ephemeral=True)
-            else:
-                await interaction.response.send_message("❌ Nincs aktív cooldown fájl a rendszerben.", ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f"❌ Hiba történt a cooldown törlése során: `{e}`", ephemeral=True)
+            if LEGACY_RESULT_CHANNEL_ID:
+                try:
+                    channel = self.bot.get_channel(LEGACY_RESULT_CHANNEL_ID) or await self.bot.fetch_channel(LEGACY_RESULT_CHANNEL_ID)
+                    if channel:
+                        embed = discord.Embed(
+                            title="🏆 Új Tier Teszt Eredmény (Legacy)", 
+                            color=discord.Color.dark_blue(), 
+                            timestamp=datetime.datetime.now(datetime.timezone.utc)
+                        )
+                        embed.add_field(name="Játékos", value=f"`{minecraft_name}` ({discord_user.mention})", inline=True)
+                        embed.add_field(name="Játékmód", value=f"`{gamemode}`", inline=True)
+                        embed.add_field(name="Elért Rank", value=f"**{tier}**", inline=True)
+                        embed.add_field(name="Teszter", value=interaction.user.mention, inline=False)
+                        embed.set_footer(text="NeoTiers Legacy Tiers")
+                        await channel.send(embed=embed)
+                except Exception as e:
+                    print(f"[LEGACY RESULT ERROR] {e}")
 
 async def setup(bot):
-    bot.add_view(PingPanelView("Modern"))
-    bot.add_view(PingPanelView("Legacy"))
-    bot.add_view(PingPanelView("All"))
-    bot.add_view(OpenQueuePanelView("Modern"))
-    bot.add_view(OpenQueuePanelView("Legacy"))
-    bot.add_view(OpenQueuePanelView("All"))
-    bot.add_view(HTPanelView("Modern"))
-    bot.add_view(HTPanelView("Legacy"))
-    bot.add_view(HTPanelView("All"))
-    
+    import math
     await bot.add_cog(TierSystemCog(bot))
