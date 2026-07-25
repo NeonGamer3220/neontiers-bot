@@ -4,9 +4,28 @@ from discord import app_commands
 import aiohttp
 import datetime
 import time
+import json
+import os
 from config import SUPABASE_URL, SUPABASE_KEY, LOG_CHANNEL_ID, MODERN_RESULT_CHANNEL_ID, LEGACY_RESULT_CHANNEL_ID
 
 REGULATOR_ROLE_NAME = "Regulator"
+COOLDOWN_FILE = "tier_cooldowns.json"
+
+def load_cooldowns():
+    if not os.path.exists(COOLDOWN_FILE):
+        return {}
+    try:
+        with open(COOLDOWN_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_cooldowns(data):
+    try:
+        with open(COOLDOWN_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"[COOLDOWN SAVE ERROR] {e}")
 
 async def send_test_announcements(bot: discord.Client, username: str, gamemode: str, rank: str, tester: discord.User):
     if MODERN_RESULT_CHANNEL_ID:
@@ -104,72 +123,60 @@ class ManualTestModal(discord.ui.Modal, title="Manuális Teszt Rögzítés (LT3-
             await interaction.followup.send(f"❌ Hiba történt: {str(e)}", ephemeral=True)
 
 class CooldownResetModal(discord.ui.Modal, title="Játékos Cooldown Törlése"):
-    minecraft_name = discord.ui.TextInput(label="Játékos Minecraft neve", placeholder="pl. Steve123", required=True, max_length=50)
-    gamemode = discord.ui.TextInput(label="Játékmód", placeholder="pl. Crystal", required=True, max_length=30)
+    discord_id = discord.ui.TextInput(label="Játékos Discord ID-ja", placeholder="pl. 1335330940980826122", required=True, max_length=30)
+    gamemode = discord.ui.TextInput(label="Játékmód", placeholder="pl. mace, sword", required=True, max_length=30)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True, ephemeral=True)
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            await interaction.followup.send("❌ Adatbázis hiba: Hiányzó konfiguráció.", ephemeral=True)
-            return
+        uid = self.discord_id.value.strip()
+        gmode = self.gamemode.value.strip().lower()
 
-        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
-        try:
-            async with aiohttp.ClientSession() as session:
-                url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/cooldowns?username=eq.{self.minecraft_name.value.strip()}&gamemode=eq.{self.gamemode.value.strip().lower()}"
-                async with session.delete(url, headers=headers) as resp:
-                    await interaction.followup.send(f"⚡ A cooldown sikeresen törölve lett **{self.minecraft_name.value}** részére a(z) `{self.gamemode.value}` módban!", ephemeral=True)
-                    fields = [
-                        ("Regulator", f"{interaction.user.mention} (`{interaction.user.id}`)", False),
-                        ("Érintett Játékos", f"`{self.minecraft_name.value}`", True),
-                        ("Játékmód", f"`{self.gamemode.value}`", True)
-                    ]
-                    await send_log(interaction.client, "⏱️ Cooldown Törölve", "Egy regulator törölte egy játékos cooldownját.", discord.Color.orange(), fields)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Hiba: {str(e)}", ephemeral=True)
+        cd_data = load_cooldowns()
+        if uid in cd_data and gmode in cd_data[uid]:
+            del cd_data[uid][gmode]
+            if not cd_data[uid]:
+                del cd_data[uid]
+            save_cooldowns(cd_data)
+
+            await interaction.followup.send(f"⚡ A cooldown sikeresen törölve lett a(z) `{uid}` ID-hoz a(z) `{gmode}` módban!", ephemeral=True)
+            fields = [
+                ("Regulator", f"{interaction.user.mention} (`{interaction.user.id}`)", False),
+                ("Érintett Discord ID", f"`{uid}`", True),
+                ("Játékmód", f"`{gmode}`", True)
+            ]
+            await send_log(interaction.client, "⏱️ Cooldown Törölve", "Egy regulator törölte egy játékos cooldownját a JSON-ből.", discord.Color.orange(), fields)
+        else:
+            await interaction.followup.send(f"⚠️ Nem található aktív cooldown ehhez az ID-hoz és játékmódhoz a JSON-ben.", ephemeral=True)
 
 class AddCooldownModal(discord.ui.Modal, title="Cooldown Hozzáadása (14 nap)"):
-    minecraft_name = discord.ui.TextInput(label="Játékos Minecraft neve", placeholder="pl. Steve123", required=True, max_length=50)
-    gamemode = discord.ui.TextInput(label="Játékmód", placeholder="pl. Crystal", required=True, max_length=30)
+    discord_id = discord.ui.TextInput(label="Játékos Discord ID-ja", placeholder="pl. 1335330940980826122", required=True, max_length=30)
+    gamemode = discord.ui.TextInput(label="Játékmód", placeholder="pl. mace, sword", required=True, max_length=30)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True, ephemeral=True)
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            await interaction.followup.send("❌ Adatbázis hiba: Hiányzó konfiguráció.", ephemeral=True)
-            return
+        uid = self.discord_id.value.strip()
+        gmode = self.gamemode.value.strip().lower()
+        
+        # 14 nap múlva lejáró timestamp (float formátumban, mint a JSON-ben)
+        expires_timestamp = time.time() + (14 * 24 * 60 * 60)
 
-        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=minimal"}
-        clean_username = self.minecraft_name.value.strip()
-        clean_gamemode = self.gamemode.value.strip().lower()
-        expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=14)).isoformat()
+        cd_data = load_cooldowns()
+        if uid not in cd_data:
+            cd_data[uid] = {}
+        cd_data[uid][gmode] = expires_timestamp
+        save_cooldowns(cd_data)
 
-        payload = {
-            "username": clean_username,
-            "gamemode": clean_gamemode,
-            "expires_at": expires_at
-        }
-
-        try:
-            async with aiohttp.ClientSession() as session:
-                url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/cooldowns"
-                async with session.post(url, json=payload, headers=headers) as resp:
-                    if resp.status in [200, 201, 204]:
-                        await interaction.followup.send(f"⚡ A 14 napos cooldown sikeresen rögzítve lett **{clean_username}** részére a(z) `{clean_gamemode}` játékmódban!", ephemeral=True)
-                        fields = [
-                            ("Regulator", f"{interaction.user.mention} (`{interaction.user.id}`)", False),
-                            ("Érintett Játékos", f"`{clean_username}`", True),
-                            ("Játékmód", f"`{clean_gamemode}`", True),
-                            ("Időtartam", "14 nap", True)
-                        ]
-                        await send_log(interaction.client, "⏱️ Cooldown Hozzáadva", "Egy regulator manuálisan 14 napos cooldown-t adott.", discord.Color.orange(), fields)
-                    else:
-                        err = await resp.text()
-                        await interaction.followup.send(f"❌ Nem sikerült hozzáadni a cooldown-t: {err}", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Hiba történt: {str(e)}", ephemeral=True)
+        await interaction.followup.send(f"⚡ A 14 napos cooldown sikeresen rögzítve lett a(z) `{uid}` ID részére a(z) `{gmode}` játékmódban!", ephemeral=True)
+        fields = [
+            ("Regulator", f"{interaction.user.mention} (`{interaction.user.id}`)", False),
+            ("Érintett Discord ID", f"`{uid}`", True),
+            ("Játékmód", f"`{gmode}`", True),
+            ("Időtartam", "14 nap", True)
+        ]
+        await send_log(interaction.client, "⏱️ Cooldown Hozzáadva", "Egy regulator manuálisan 14 napos cooldown-t adott a JSON-höz.", discord.Color.orange(), fields)
 
 class StaffReportModal(discord.ui.Modal, title="Hiba vagy Eltérés Jelentése"):
-    target_info = discord.ui.TextInput(label="Érintett Játékos / Teszt / Téma", placeholder="pl. Steve123 vagy Teszt ID", required=True, max_length=100)
+    target_info = discord.ui.TextInput(label="Érintett Játékos / Teszt / Téma", placeholder="pl. Steve123 vagy Discord ID", required=True, max_length=100)
     description = discord.ui.TextInput(label="A hiba vagy eltérés részletes leírása", placeholder="Írd le pontosan mi a probléma...", style=discord.TextStyle.paragraph, required=True, max_length=500)
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -189,44 +196,65 @@ class StaffReportModal(discord.ui.Modal, title="Hiba vagy Eltérés Jelentése")
         await interaction.followup.send("✅ A jelentés sikeresen elküldve a belső log csatornába!", ephemeral=True)
 
 class PlayerHistoryModal(discord.ui.Modal, title="Játékos Előélet Lekérdezése"):
-    minecraft_name = discord.ui.TextInput(label="Játékos Minecraft neve", placeholder="pl. Steve123", required=True, max_length=50)
+    minecraft_name = discord.ui.TextInput(label="Játékos Minecraft neve (Opcionális)", placeholder="pl. Steve123", required=False, max_length=50)
+    discord_id = discord.ui.TextInput(label="Játékos Discord ID-ja (Opcionális)", placeholder="pl. 1335330940980826122", required=False, max_length=30)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True, ephemeral=True)
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            await interaction.followup.send("❌ Adatbázis hiba.", ephemeral=True)
+        
+        mc_name = self.minecraft_name.value.strip() if self.minecraft_name.value else None
+        uid = self.discord_id.value.strip() if self.discord_id.value else None
+
+        if not mc_name and not uid:
+            await interaction.followup.send("❌ Legalább az egyik mezőt ki kell töltened (Minecraft név vagy Discord ID)!", ephemeral=True)
             return
 
-        username = self.minecraft_name.value.strip()
-        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+        tests = []
+        # 1. Tesztek lekérése Supabase-ből (ha van Minecraft név)
+        if mc_name and SUPABASE_URL and SUPABASE_KEY:
+            headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+            try:
+                async with aiohttp.ClientSession() as session:
+                    tests_url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/tests?username=eq.{mc_name}&select=gamemode,rank,created_at"
+                    async with session.get(tests_url, headers=headers) as resp:
+                        if resp.status == 200:
+                            tests = await resp.json()
+            except Exception as e:
+                print(f"[HISTORY TESTS ERROR] {e}")
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                tests_url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/tests?username=eq.{username}&select=gamemode,rank,created_at"
-                async with session.get(tests_url, headers=headers) as resp:
-                    tests = await resp.json() if resp.status == 200 else []
+        # 2. Cooldownok lekérése a tier_cooldowns.json fájrból (ha van Discord ID)
+        user_cooldowns = {}
+        if uid:
+            cd_data = load_cooldowns()
+            if uid in cd_data:
+                user_cooldowns = cd_data[uid]
 
-                cooldowns_url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/cooldowns?username=eq.{username}&select=gamemode,expires_at"
-                async with session.get(cooldowns_url, headers=headers) as resp:
-                    cooldowns = await resp.json() if resp.status == 200 else []
+        embed = discord.Embed(title=f"📜 Játékos Előélet Lekérdezés", color=discord.Color.purple())
+        if mc_name:
+            embed.add_field(name="Minecraft Név", value=f"`{mc_name}`", inline=True)
+        if uid:
+            embed.add_field(name="Discord ID", value=f"`{uid}`", inline=True)
 
-            embed = discord.Embed(title=f"📜 Játékos Előélet: `{username}`", color=discord.Color.purple())
-            
-            if tests:
-                tests_str = "\n".join([f"• **{t['gamemode']}**: `{t['rank']}`" for t in tests])
-                embed.add_field(name="Elért Rangok", value=tests_str, inline=False)
-            else:
-                embed.add_field(name="Elért Rangok", value="*Nincsenek rögzített tesztek.*", inline=False)
+        # Rangok formázása
+        if tests:
+            tests_str = "\n".join([f"• **{t['gamemode']}**: `{t['rank']}`" for t in tests])
+            embed.add_field(name="Elért Rangok (Supabase)", value=tests_str, inline=False)
+        elif mc_name:
+            embed.add_field(name="Elért Rangok (Supabase)", value="*Nincsenek rögzített tesztek ezen a néven.*", inline=False)
 
-            if cooldowns:
-                cd_str = "\n".join([f"• `{cd['gamemode']}` (Lejár: {cd.get('expires_at', 'Ismeretlen')})" for cd in cooldowns])
-                embed.add_field(name="Aktív Cooldownok", value=cd_str, inline=False)
-            else:
-                embed.add_field(name="Aktív Cooldownok", value="*Nincs aktív cooldown.*", inline=False)
+        # Cooldownok formázása
+        if user_cooldowns:
+            cd_lines = []
+            for mode, timestamp in user_cooldowns.items():
+                # Timestamp konvertálása olvasható dátumra
+                dt = datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
+                dt_str = dt.strftime("%Y-%m-%d %H:%M")
+                cd_lines.append(f"• `{mode}` (Lejár: {dt_str} UTC)")
+            embed.add_field(name="Aktív Cooldownok (JSON)", value="\n".join(cd_lines), inline=False)
+        elif uid:
+            embed.add_field(name="Aktív Cooldownok (JSON)", value="*Nincs aktív cooldown ennél a Discord ID-nál.*", inline=False)
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Hiba történt: {str(e)}", ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 class RegulatorPanelView(discord.ui.View):
     def __init__(self):
@@ -305,10 +333,10 @@ class RegulatorPanelCog(commands.Cog):
             title="🛡️ Regulator Kezelőpanel",
             description="Üdv a vezérlőpultban! Válassz az alábbi opciók közül:\n\n"
                         "• **📝 Teszt Rögzítése:** Manuális felvitel LT3-ig.\n"
-                        "• **⏱️ Cooldown Törlése:** Várakozási idő eltávolítása.\n"
+                        "• **⏱️ Cooldown Törlése:** Várakozási idő eltávolítása (JSON).\n"
                         "• **🔍 Játékos Előélet:** Rangok és cooldownok lekérdezése.\n"
                         "• **📊 Saját Statisztika:** Eddigi elvégzett tesztjeid száma.\n"
-                        "• **⏱️ Cooldown Hozzáadása:** 14 napos eltiltás rögzítése.\n"
+                        "• **⏱️ Cooldown Hozzáadása:** 14 napos eltiltás rögzítése (JSON).\n"
                         "• **⚠️ Hiba Jelentése:** Hibák vagy eltérések beküldése a logba.",
             color=discord.Color.dark_purple()
         )
@@ -323,10 +351,10 @@ class RegulatorPanelCog(commands.Cog):
             title="🛡️ Regulator Kezelőpanel",
             description="Üdv a vezérlőpultban! Válassz az alábbi opciók közül:\n\n"
                         "• **📝 Teszt Rögzítése:** Manuális felvitel LT3-ig.\n"
-                        "• **⏱️ Cooldown Törlése:** Várakozási idő eltávolítása.\n"
+                        "• **⏱️ Cooldown Törlése:** Várakozási idő eltávolítása (JSON).\n"
                         "• **🔍 Játékos Előélet:** Rangok és cooldownok lekérdezése.\n"
                         "• **📊 Saját Statisztika:** Eddigi elvégzett tesztjeid száma.\n"
-                        "• **⏱️ Cooldown Hozzáadása:** 14 napos eltiltás rögzítése.\n"
+                        "• **⏱️ Cooldown Hozzáadása:** 14 napos eltiltás rögzítése (JSON).\n"
                         "• **⚠️ Hiba Jelentése:** Hibák vagy eltérések beküldése a logba.",
             color=discord.Color.dark_purple()
         )
