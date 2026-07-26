@@ -36,6 +36,35 @@ HIGHTEST_OPTIONS = [
 COOLDOWNS = {}  # (user_id, gamemode): timestamp
 
 ARCHIVE_INDEX_FILE = "ticket_archives.json"
+DM_OPTOUT_FILE = "dm_optout.json"
+
+
+def is_dm_optout(user_id: int) -> bool:
+    if not os.path.exists(DM_OPTOUT_FILE):
+        return False
+    try:
+        with open(DM_OPTOUT_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return user_id in data
+    except Exception:
+        return False
+
+
+def set_dm_optout(user_id: int):
+    data = []
+    if os.path.exists(DM_OPTOUT_FILE):
+        try:
+            with open(DM_OPTOUT_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = []
+    if user_id not in data:
+        data.append(user_id)
+    try:
+        with open(DM_OPTOUT_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
 
 
 def get_ticket_category(guild: discord.Guild, is_legacy: bool):

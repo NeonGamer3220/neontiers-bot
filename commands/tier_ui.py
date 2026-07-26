@@ -6,11 +6,12 @@ High Test javaslat beküldő modal (nem zárja be azonnal a csatornát) és tier
 import discord
 import asyncio
 import time
-from config import TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES, get_gamemode_display_name, STAFF_ROLE_ID, REGULATOR_ROLE_ID, RANKS
+from config import TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES, get_gamemode_display_name, STAFF_ROLE_ID, REGULATOR_ROLE_ID, RANKS, MODERN_RESULT_CHANNEL_ID, LEGACY_RESULT_CHANNEL_ID, LOG_CHANNEL_ID
 from commands.tier_utils import (
     ACTIVE_QUEUES, INACTIVE_TICKETS, VALID_HT_TIERS, ALLOWED_QUEUE_TIERS,
     get_ticket_category, get_queue_category, update_queue_message, 
-    set_cooldown, check_timeout, THEME_LIGHT_PURPLE, archive_channel
+    set_cooldown, check_timeout, THEME_LIGHT_PURPLE, archive_channel,
+    is_dm_optout, set_dm_optout
 )
 from commands.ban_enforcement import is_banned_by_role
 from database import get_linked_minecraft_name_async, save_test_result_supabase, get_player_rank_async
@@ -139,13 +140,69 @@ class HighTestTicketView(discord.ui.View):
             pass
 
 
+class TestFeedbackModal(discord.ui.Modal, title="Teszt Értékelése"):
+    def __init__(self, player_id: int, gamemode_label: str):
+        super().__init__()
+        self.player_id = player_id
+        self.gamemode_label = gamemode_label
+
+        self.feedback_input = discord.ui.TextInput(
+            label="Véleményed a tesztről",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=1000
+        )
+        self.add_item(self.feedback_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        log_chan = interaction.client.get_channel(LOG_CHANNEL_ID) if LOG_CHANNEL_ID else None
+        embed = discord.Embed(
+            title=f"⭐ Teszt Értékelés ({self.gamemode_label})",
+            description=self.feedback_input.value.strip(),
+            color=discord.Color.gold()
+        )
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url if interaction.user.display_avatar else None)
+        embed.set_footer(text=f"Discord ID: {interaction.user.id}")
+        if log_chan:
+            try:
+                await log_chan.send(embed=embed)
+            except Exception:
+                pass
+        await interaction.followup.send("✅ Köszönjük az értékelést!", ephemeral=True)
+
+
+class TestFeedbackView(discord.ui.View):
+    def __init__(self, player_id: int, gamemode_label: str):
+        super().__init__(timeout=None)
+        self.player_id = player_id
+        self.gamemode_label = gamemode_label
+
+    @discord.ui.button(label="⭐ Értékelés", style=discord.ButtonStyle.blurple, custom_id="dm_feedback_btn")
+    async def give_feedback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.player_id:
+            return await interaction.response.send_message("❌ Ez nem a te értesítésed!", ephemeral=True)
+        await interaction.response.send_modal(TestFeedbackModal(self.player_id, self.gamemode_label))
+
+    @discord.ui.button(label="🔕 Ne küldj több ilyen üzenetet", style=discord.ButtonStyle.gray, custom_id="dm_optout_btn")
+    async def opt_out(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.player_id:
+            return await interaction.response.send_message("❌ Ez nem a te értesítésed!", ephemeral=True)
+        set_dm_optout(interaction.user.id)
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send("🔕 Rendben, mostantól nem küldünk több ilyen privát üzenetet!", ephemeral=True)
+
+
 class TestResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
-    def __init__(self, player_id: int, player_mc: str, gamemode: str, queue_ch_id: int = None):
+    def __init__(self, player_id: int, player_mc: str, gamemode: str, queue_ch_id: int = None, is_legacy: bool = False):
         super().__init__()
         self.player_id = player_id
         self.player_mc = player_mc
         self.gamemode = gamemode
         self.queue_ch_id = queue_ch_id
+        self.is_legacy = is_legacy
 
         self.tier_input = discord.ui.TextInput(
             label="Elért Szint (Tier)",
@@ -167,9 +224,10 @@ class TestResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
         guild = interaction.guild
         player_user = guild.get_member(self.player_id) or await guild.fetch_member(self.player_id)
         tester_user = interaction.user
+        label = get_gamemode_display_name(self.gamemode)
 
         try:
-            await save_test_result_supabase(player_user, self.player_mc, self.gamemode, tier, tester_user, interaction)
+            await save_test_result_supabase(player_user, self.player_mc, label, tier, tester_user, interaction)
         except Exception:
             pass
 
@@ -187,7 +245,33 @@ class TestResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
                 pass
 
         await interaction.followup.send(f"✅ Sikeresen rögzítve! Játékos: **{self.player_mc}** | Szint: **{tier}**", ephemeral=True)
-        
+
+        # Eredmény közzététele a megfelelő (Modern/Legacy) eredmény csatornában
+        results_chan_id = LEGACY_RESULT_CHANNEL_ID if self.is_legacy else MODERN_RESULT_CHANNEL_ID
+        results_chan = guild.get_channel(results_chan_id) if results_chan_id else None
+        if results_chan:
+            result_embed = discord.Embed(
+                title=f"📋 Teszt Eredmény - {label}",
+                description=f"Játékos: <@{self.player_id}> (**{self.player_mc}**)\nEredmény: **{tier}**\nTeszter: {tester_user.mention}",
+                color=discord.Color.green()
+            )
+            try:
+                await results_chan.send(embed=result_embed)
+            except Exception:
+                pass
+
+        # DM a játékosnak, ha nem tiltotta le az értesítéseket
+        if not is_dm_optout(self.player_id):
+            try:
+                dm_embed = discord.Embed(
+                    title="📋 Teszt Eredmény",
+                    description=f"A(z) **{label}** tesztedet **{tester_user.display_name}** rögzítette.\nEredmény: **{tier}**",
+                    color=discord.Color.green()
+                )
+                await player_user.send(embed=dm_embed, view=TestFeedbackView(self.player_id, label))
+            except Exception:
+                pass
+
         await archive_channel(interaction.channel, tester_user, reason=f"Teszt eredmény rögzítve: {tier}")
 
         await asyncio.sleep(3)
@@ -198,12 +282,13 @@ class TestResultModal(discord.ui.Modal, title="Teszt Eredmény Rögzítése"):
 
 
 class TestTicketView(discord.ui.View):
-    def __init__(self, player_id: int, player_mc: str, gamemode: str, queue_ch_id: int = None):
+    def __init__(self, player_id: int, player_mc: str, gamemode: str, queue_ch_id: int = None, is_legacy: bool = False):
         super().__init__(timeout=None)
         self.player_id = player_id
         self.player_mc = player_mc
         self.gamemode = gamemode
         self.queue_ch_id = queue_ch_id
+        self.is_legacy = is_legacy
 
     @discord.ui.button(label="📝 Eredmény Rögzítése", style=discord.ButtonStyle.green, custom_id="test_record_result")
     async def record_result(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -215,7 +300,8 @@ class TestTicketView(discord.ui.View):
             player_id=self.player_id,
             player_mc=self.player_mc,
             gamemode=self.gamemode,
-            queue_ch_id=self.queue_ch_id
+            queue_ch_id=self.queue_ch_id,
+            is_legacy=self.is_legacy
         )
         await interaction.response.send_modal(modal)
 
@@ -356,8 +442,19 @@ class QueueActiveView(discord.ui.View):
             description=f"Játékos: <@{target_player['id']}> (**{target_player['mc']}**)\nTeszter: {interaction.user.mention}\n\nKattints az alábbi gombra az eredmény rögzítéséhez!",
             color=discord.Color.blue()
         )
-        await test_chan.send(content=f"{player_user.mention} {interaction.user.mention}", embed=embed, view=TestTicketView(target_player['id'], target_player['mc'], self.mode_key, ch_id))
+        await test_chan.send(content=f"{player_user.mention} {interaction.user.mention}", embed=embed, view=TestTicketView(target_player['id'], target_player['mc'], self.mode_key, ch_id, self.is_legacy))
         await interaction.followup.send(f"✅ Következő játékos behívva! Teszt csatorna: {test_chan.mention}", ephemeral=True)
+
+        if not is_dm_optout(target_player['id']):
+            try:
+                dm_embed = discord.Embed(
+                    title="🎮 Sorra kerültél!",
+                    description=f"Sorra kerültél a(z) **{label}** várólistában!\nTeszt szobád: {test_chan.mention}\nTeszter: {interaction.user.display_name}",
+                    color=discord.Color.blue()
+                )
+                await player_user.send(embed=dm_embed)
+            except Exception:
+                pass
 
     @discord.ui.button(label="🔒 Lezárás", style=discord.ButtonStyle.gray, custom_id="queue_close")
     async def close_queue(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -521,8 +618,9 @@ class PanelSelect(discord.ui.Select):
         tester_role = discord.utils.get(guild.roles, name=tester_role_name)
 
         overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True)
+            guild.default_role: discord.PermissionOverwrite(view_channel=True, send_messages=False, read_message_history=True),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
+            user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
         }
         if tester_role:
             overwrites[tester_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
