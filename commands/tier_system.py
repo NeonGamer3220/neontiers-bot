@@ -10,6 +10,7 @@ import asyncio
 
 from commands.tier_ui import PanelSelectView
 from commands.tier_utils import INACTIVE_TICKETS, archive_channel
+from config import STAFF_ROLE_ID, REGULATOR_ROLE_ID
 
 
 class TierSystemCog(commands.Cog):
@@ -69,6 +70,48 @@ class TierSystemCog(commands.Cog):
             if data["warned"]:
                 data["warned"] = False
                 await message.channel.send("✅ Új üzenet érkezett, a 48 órás visszaszámlálás újrakezdődött!")
+
+    def _is_regulator_or_staff(self, member: discord.Member) -> bool:
+        if member.guild_permissions.administrator:
+            return True
+        role_ids = {r.id for r in member.roles}
+        return bool(role_ids & {STAFF_ROLE_ID, REGULATOR_ROLE_ID})
+
+    @app_commands.command(name="ticketadd", description="Hozzáad egy felhasználót a jelenlegi tickethez/csatornához.")
+    @app_commands.describe(user="A hozzáadandó felhasználó.")
+    async def ticketadd(self, interaction: discord.Interaction, user: discord.Member):
+        if not self._is_regulator_or_staff(interaction.user):
+            return await interaction.response.send_message("❌ Csak regulatorok vagy staff tagok adhatnak hozzá felhasználót egy tickethez!", ephemeral=True)
+
+        if not isinstance(interaction.channel, (discord.TextChannel, discord.Thread)):
+            return await interaction.response.send_message("❌ Ez a parancs csak szöveges csatornában/ticketben használható!", ephemeral=True)
+
+        try:
+            await interaction.channel.set_permissions(user, view_channel=True, send_messages=True, read_message_history=True)
+        except Exception as e:
+            return await interaction.response.send_message(f"❌ Nem sikerült hozzáadni: `{e}`", ephemeral=True)
+
+        if interaction.channel.id in INACTIVE_TICKETS:
+            INACTIVE_TICKETS[interaction.channel.id]["last_activity"] = time.time()
+            INACTIVE_TICKETS[interaction.channel.id]["warned"] = False
+
+        await interaction.response.send_message(f"✅ {user.mention} hozzáadva a tickethez {interaction.user.mention} által.")
+
+    @app_commands.command(name="ticketremove", description="Eltávolít egy felhasználót a jelenlegi tickethez/csatornából.")
+    @app_commands.describe(user="Az eltávolítandó felhasználó.")
+    async def ticketremove(self, interaction: discord.Interaction, user: discord.Member):
+        if not self._is_regulator_or_staff(interaction.user):
+            return await interaction.response.send_message("❌ Csak regulatorok vagy staff tagok távolíthatnak el felhasználót egy tickeből!", ephemeral=True)
+
+        if not isinstance(interaction.channel, (discord.TextChannel, discord.Thread)):
+            return await interaction.response.send_message("❌ Ez a parancs csak szöveges csatornában/ticketben használható!", ephemeral=True)
+
+        try:
+            await interaction.channel.set_permissions(user, view_channel=False, send_messages=False, read_message_history=False)
+        except Exception as e:
+            return await interaction.response.send_message(f"❌ Nem sikerült eltávolítani: `{e}`", ephemeral=True)
+
+        await interaction.response.send_message(f"✅ {user.mention} eltávolítva a ticketből {interaction.user.mention} által.")
 
     @app_commands.command(name="archives", description="Kilistázza a legutóbb archivált ticketeket.")
     @app_commands.describe(count="Hány legutóbbi archívumot listázzon ki (max 25).", jatekos="Szűrés Minecraft név / csatornanév alapján (opcionális).")
