@@ -9,17 +9,19 @@ import time
 import asyncio
 
 from commands.tier_ui import PanelSelectView
-from commands.tier_utils import INACTIVE_TICKETS, archive_channel
-from config import STAFF_ROLE_ID, REGULATOR_ROLE_ID
+from commands.tier_utils import INACTIVE_TICKETS, archive_channel, COOLDOWNS, is_dm_optout
+from config import STAFF_ROLE_ID, REGULATOR_ROLE_ID, get_gamemode_display_name
 
 
 class TierSystemCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.inactivity_checker.start()
+        self.cooldown_notifier.start()
 
     def cog_unload(self):
         self.inactivity_checker.cancel()
+        self.cooldown_notifier.cancel()
 
     @tasks.loop(minutes=5)
     async def inactivity_checker(self):
@@ -57,6 +59,33 @@ class TierSystemCog(commands.Cog):
 
     @inactivity_checker.before_loop
     async def before_inactivity_checker(self):
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(minutes=1)
+    async def cooldown_notifier(self):
+        now = time.time()
+        expired = [(key, expiry) for key, expiry in list(COOLDOWNS.items()) if expiry <= now]
+
+        for (user_id, gamemode), _ in expired:
+            COOLDOWNS.pop((user_id, gamemode), None)
+
+            if is_dm_optout(user_id):
+                continue
+
+            try:
+                user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+                label = get_gamemode_display_name(gamemode)
+                embed = discord.Embed(
+                    title="⏳ Lejárt a várakozási időd!",
+                    description=f"Lejárt a tesztelési várakozási időd a(z) **{label}** játékmódban, most már újra jelentkezhetsz tesztre!",
+                    color=discord.Color.green()
+                )
+                await user.send(embed=embed)
+            except Exception:
+                pass
+
+    @cooldown_notifier.before_loop
+    async def before_cooldown_notifier(self):
         await self.bot.wait_until_ready()
 
     @commands.Cog.listener()
