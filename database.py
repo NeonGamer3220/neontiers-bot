@@ -225,9 +225,11 @@ async def generate_link_code_async(discord_id: int) -> str:
     import string
     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
     if db._client:
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
         db._client.table("link_codes").upsert({
             "discord_id": discord_id,
-            "code": code
+            "code": code,
+            "expires_at": expires_at
         }).execute()
     return code
 
