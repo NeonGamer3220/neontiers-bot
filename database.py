@@ -226,7 +226,7 @@ async def generate_link_code_async(discord_id: int) -> str:
     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
     if db._client:
         expires_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
-        db._client.table("link_codes").upsert({
+        db._client.table("pending_codes").upsert({
             "discord_id": discord_id,
             "code": code,
             "expires_at": expires_at
@@ -249,20 +249,34 @@ async def unlink_minecraft_account_async(discord_id: int) -> bool:
 async def save_test_result_supabase(player_user: discord.Member, player_mc: str, gamemode: str, tier: str, tester_user: discord.Member, interaction: discord.Interaction):
     """
     Elmenti a teszt eredményt a Supabase adatbázisba (tests tábla: username, gamemode, rank, points, created_at).
+
+    A weboldal (/api/tests) csak a valódi tier-kódokat (LT5..HT1) fogadja el
+    rank-ként — az "UNRANKED"/"Unranked" szöveg NEM érvényes tier ott, ezért
+    azt sosem írjuk be szó szerint a rank mezőbe. Ha a teszter "Unranked"
+    eredményt rögzít, a meglévő sort töröljük (a játékos ismét teszteletlen
+    lesz abban a gamemode-ban) ahelyett, hogy érvénytelen adatot mentenénk.
     """
     from config import POINTS
     if not db._client:
         return
     try:
-        pts = POINTS.get(tier.upper(), 0)
         now = datetime.now(timezone.utc).isoformat()
         existing = await arun(supabase_select, "tests", "username", player_mc)
         existing_row = next((r for r in existing if str(r.get("gamemode", "")).strip().lower() == gamemode.strip().lower()), None)
 
+        clean_tier = str(tier or "").strip().upper()
+
+        if clean_tier in ("", "UNRANKED"):
+            if existing_row and existing_row.get("id") is not None:
+                await arun(lambda: db._client.table("tests").delete().eq("id", existing_row["id"]).execute())
+            return
+
+        pts = POINTS.get(clean_tier, 0)
+
         payload = {
             "username": player_mc,
             "gamemode": gamemode,
-            "rank": tier,
+            "rank": clean_tier,
             "points": pts,
             "created_at": now
         }

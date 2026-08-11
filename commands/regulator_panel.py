@@ -83,18 +83,32 @@ class ManualTestModal(discord.ui.Modal, title="Manuális Teszt Rögzítés (LT3-
             await interaction.followup.send("❌ Adatbázis hiba: Hiányzó konfiguráció.", ephemeral=True)
             return
 
+        # Csak ismert, LT3-ig terjedő tiereket fogadunk el — enélkül egy
+        # elgépelt tier szöveg (pl. "L3") érvénytelen adatként kerülne be az
+        # adatbázisba, amit a weboldal utána nem tud értelmezni.
+        clean_rank = self.tier.value.strip().upper()
+        allowed_ranks = ["LT5", "HT5", "LT4", "HT4", "LT3"]
+        if clean_rank not in allowed_ranks:
+            await interaction.followup.send(
+                f"❌ Érvénytelen tier: `{clean_rank}`. Innen csak ezek adhatók: {', '.join(allowed_ranks)}. "
+                f"Magasabb tierhez használd a weboldal Magas Eredmény Kezelőjét.",
+                ephemeral=True,
+            )
+            return
+
         headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=minimal"}
         unique_id = int(time.time() * 1000)
         clean_username = self.minecraft_name.value.strip()
         clean_gamemode = self.gamemode.value.strip().lower()
-        clean_rank = self.tier.value.strip().upper()
         is_pub = self.is_public.value.strip().lower() in ["igen", "i", "yes", "y"]
 
+        from config import POINTS
         payload = {
             "id": unique_id,
             "username": clean_username,
             "gamemode": clean_gamemode,
             "rank": clean_rank,
+            "points": POINTS.get(clean_rank, 0),
             "tester_id": str(interaction.user.id),
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
