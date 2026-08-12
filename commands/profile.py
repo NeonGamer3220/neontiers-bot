@@ -23,6 +23,18 @@ log = logging.getLogger("neontiers.commands.profile")
 
 LEGACY_KEYS = {key.lower() for _, key, _ in LEGACY_TICKET_TYPES}
 
+
+def _columns(entries: list[str], columns: int = 3) -> list[str]:
+    """Szétosztja a bejegyzéseket `columns` darab kb. egyenlő hosszú listára,
+    hogy azokat egymás mellett, inline mezőkként lehessen megjeleníteni
+    (Discord embedben 3 inline mező = 3 oszlop)."""
+    if not entries:
+        return []
+    result = [[] for _ in range(columns)]
+    for i, entry in enumerate(entries):
+        result[i % columns].append(entry)
+    return ["\n".join(col) if col else "\u200b" for col in result]
+
 class ProfileCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -101,31 +113,21 @@ class ProfileCog(commands.Cog):
                 else:
                     modern_results.append(entry)
 
+        # --- Modern eredmények, 3 oszlopban ---
+        embed.add_field(name="📊 Modern Tier Eredmények", value="\u200b", inline=False)
         if modern_results:
-            embed.add_field(
-                name="📊 Modern Tier Eredmények",
-                value="\n".join(modern_results)[:1024],
-                inline=False
-            )
+            for col in _columns(modern_results, 3):
+                embed.add_field(name="\u200b", value=col[:1024], inline=True)
         else:
-            embed.add_field(
-                name="📊 Modern Tier Eredmények",
-                value="*Nincsenek rögzített modern eredmények.*",
-                inline=False
-            )
+            embed.add_field(name="\u200b", value="*Nincsenek rögzített modern eredmények.*", inline=False)
 
+        # --- Legacy eredmények, 3 oszlopban ---
+        embed.add_field(name="📜 Legacy Tier Eredmények", value="\u200b", inline=False)
         if legacy_results:
-            embed.add_field(
-                name="📜 Legacy Tier Eredmények",
-                value="\n".join(legacy_results)[:1024],
-                inline=False
-            )
+            for col in _columns(legacy_results, 3):
+                embed.add_field(name="\u200b", value=col[:1024], inline=True)
         else:
-            embed.add_field(
-                name="📜 Legacy Tier Eredmények",
-                value="*Nincsenek rögzített legacy eredmények.*",
-                inline=False
-            )
+            embed.add_field(name="\u200b", value="*Nincsenek rögzített legacy eredmények.*", inline=False)
 
         embed.set_footer(text=f"NeonTiers.hu • Lekérve: {interaction.created_at.strftime('%Y-%m-%d %H:%M')}")
 

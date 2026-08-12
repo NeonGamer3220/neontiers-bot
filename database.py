@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Any, Callable, TypeVar
 
@@ -194,10 +195,23 @@ async def get_linked_minecraft_name_async(discord_id: int) -> str | None:
     acc = await arun(db.get_linked_account, discord_id)
     return acc.get("minecraft_name") if acc else None
 
-async def get_tgf_cooldown(discord_id: int) -> int | None:
-    # Ha van TGF cooldown táblád a Supabase-ben, innen kérhető le
+async def get_tgf_cooldown(discord_id: int) -> "datetime | None":
+    # Ha van TGF cooldown táblád a Supabase-ben, innen kérhető le.
+    # Az "expires_at" oszlop nevét kell használni (ez van a Supabase táblában),
+    # és a lejárt (múltbeli) cooldownokat nem vesszük figyelembe.
     res = await arun(supabase_select, "tgf_cooldowns", "discord_id", discord_id)
-    return res[0].get("cooldown_until") if res else None
+    if not res:
+        return None
+    raw = res[0].get("expires_at")
+    if not raw:
+        return None
+    try:
+        expires = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if expires <= datetime.now(timezone.utc):
+        return None
+    return expires
 
 # ======================================================================
 # HIÁNYZÓ KOMPATIBILITÁSI FÜGGVÉNYEK A COG-OKHOZ
@@ -213,10 +227,14 @@ async def set_tgf_cooldown(discord_id: int, days: int = 14) -> bool:
     if not db._client:
         return False
     until = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
-    resp = db._client.table("tgf_cooldowns").upsert({
-        "discord_id": discord_id,
-        "cooldown_until": until
-    }).execute()
+    # FONTOS: a Supabase "tgf_cooldowns" táblában az oszlop neve "expires_at",
+    # nem "cooldown_until" — emiatt dobott korábban NOT NULL hibát.
+    resp = await arun(
+        lambda: db._client.table("tgf_cooldowns").upsert(
+            {"discord_id": discord_id, "expires_at": until},
+            on_conflict="discord_id"
+        ).execute()
+    )
     return bool(resp.data)
 
 async def generate_link_code_async(discord_id: int) -> str:
@@ -283,6 +301,12 @@ async def save_test_result_supabase(player_user: discord.Member, player_mc: str,
         if existing_row and existing_row.get("id") is not None:
             await arun(lambda: db._client.table("tests").update(payload).eq("id", existing_row["id"]).execute())
         else:
+            # A Supabase "tests" tábla "id" oszlopának nincs alapértelmezett
+            # (auto-increment/identity) értéke, ezért ha nem adunk meg id-t,
+            # a beszúrás "null value in column id" hibával elszáll. Emiatt itt
+            # saját, egyedi azonosítót generálunk (ugyanaz a séma, mint amit a
+            # regulator_panel.py manuális rögzítése is használ).
+            payload["id"] = int(time.time() * 1000)
             await arun(lambda: db._client.table("tests").insert(payload).execute())
     except Exception as e:
         print(f"Hiba az eredmény mentésekor Supabase-be: {e}")

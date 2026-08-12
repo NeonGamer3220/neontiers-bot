@@ -24,6 +24,10 @@ DEBUG_ALLOWED_ROLES = [1483822408182796418]
 REGULATOR_ROLE_ID = 1483822408182796418
 TESTER_ROLE_ID = 1469755118634270864
 
+# Csak ez a rang kattinthat a várólista "Következő" gombjára, és csak ez a rang
+# adhat/rögzíthet tiereket (Teszt Eredmény Rögzítése). Admin mindig felülír.
+TIER_GIVER_ROLE_ID = 1521916878321090652
+
 TGF_COOLDOWN_DAYS = int(os.getenv("TGF_COOLDOWN_DAYS", "14"))
 TGF_LOG_CHANNEL_ID = int(os.getenv("TGF_LOG_CHANNEL_ID", "0"))
 BAN_CHANNEL_ID = int(os.getenv("BAN_CHANNEL_ID", "0"))

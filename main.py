@@ -44,11 +44,44 @@ intents.guilds = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+_persistent_views_registered = False
+
+
+def register_persistent_views() -> None:
+    """
+    Regisztrálja az összes 'statikus' (nem egyedi, ticket/felhasználó-független)
+    gombos/dropdownos panel View-ját, hogy azok újraindítás UTÁN is működjenek
+    anélkül, hogy a panelt újra ki kellene küldeni.
+
+    Ez a ping/queue/hightest panelek dropdown menüjére (PanelSelectView),
+    valamint a TGF és Regulator panelekre vonatkozik, mivel ezeknek a
+    custom_id-ja fix és nem függ konkrét felhasználótól/tickettől.
+    """
+    global _persistent_views_registered
+    if _persistent_views_registered:
+        return
+
+    from commands.tier_ui import PanelSelectView
+    from commands.tgf import TGFPanelView
+    from commands.regulator_panel import RegulatorPanelView
+
+    for mode_type in ("Modern", "Legacy"):
+        for action_type in ("ping", "queue", "hightest"):
+            bot.add_view(PanelSelectView(mode_type, action_type))
+
+    bot.add_view(TGFPanelView())
+    bot.add_view(RegulatorPanelView())
+
+    _persistent_views_registered = True
+    log.info("Perzisztens panel View-k regisztrálva (ping/queue/hightest/tgf/regulator).")
+
 
 @bot.event
 async def on_ready():
     log.info("Fő bot elindult: %s (ID: %s)", bot.user, bot.user.id)
-    
+
+    register_persistent_views()
+
     try:
         # 1. Megtisztítjuk az esetleges szerver-szintű (Guild) parancsduplázódásokat
         for guild in bot.guilds:

@@ -6,7 +6,7 @@ High Test javaslat beküldő modal (nem zárja be azonnal a csatornát) és tier
 import discord
 import asyncio
 import time
-from config import TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES, get_gamemode_display_name, STAFF_ROLE_ID, REGULATOR_ROLE_ID, RANKS, MODERN_RESULT_CHANNEL_ID, LEGACY_RESULT_CHANNEL_ID, LOG_CHANNEL_ID
+from config import TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES, get_gamemode_display_name, STAFF_ROLE_ID, REGULATOR_ROLE_ID, RANKS, MODERN_RESULT_CHANNEL_ID, LEGACY_RESULT_CHANNEL_ID, LOG_CHANNEL_ID, TIER_GIVER_ROLE_ID
 from commands.tier_utils import (
     ACTIVE_QUEUES, INACTIVE_TICKETS, VALID_HT_TIERS, ALLOWED_QUEUE_TIERS,
     get_ticket_category, get_queue_category, update_queue_message, 
@@ -15,6 +15,14 @@ from commands.tier_utils import (
 )
 from commands.ban_enforcement import is_banned_by_role
 from database import get_linked_minecraft_name_async, save_test_result_supabase, get_player_rank_async
+
+
+def _can_give_tiers(member: discord.Member) -> bool:
+    """Csak a TIER_GIVER_ROLE_ID rang (vagy admin) hívhatja a 'Következő' gombot
+    és adhat/rögzíthet tiert."""
+    if member.guild_permissions.administrator:
+        return True
+    return any(r.id == TIER_GIVER_ROLE_ID for r in member.roles)
 
 
 class HighTestNoteModal(discord.ui.Modal, title="Megjegyzés Beküldése"):
@@ -292,9 +300,8 @@ class TestTicketView(discord.ui.View):
 
     @discord.ui.button(label="📝 Eredmény Rögzítése", style=discord.ButtonStyle.green, custom_id="test_record_result")
     async def record_result(self, interaction: discord.Interaction, button: discord.ui.Button):
-        is_staff = interaction.user.guild_permissions.administrator or any(r.id in [STAFF_ROLE_ID, REGULATOR_ROLE_ID] for r in interaction.user.roles)
-        if not is_staff:
-            return await interaction.response.send_message("❌ Csak teszterek vagy regulatorok rögzíthetnek eredményt!", ephemeral=True)
+        if not _can_give_tiers(interaction.user):
+            return await interaction.response.send_message("❌ Csak a jogosult rang adhat/rögzíthet tiert!", ephemeral=True)
 
         modal = TestResultModal(
             player_id=self.player_id,
@@ -381,9 +388,8 @@ class QueueActiveView(discord.ui.View):
 
     @discord.ui.button(label="➡️ Következő", style=discord.ButtonStyle.green, custom_id="queue_next")
     async def next_player(self, interaction: discord.Interaction, button: discord.ui.Button):
-        is_staff = interaction.user.guild_permissions.administrator or any(r.id in [STAFF_ROLE_ID, REGULATOR_ROLE_ID] for r in interaction.user.roles)
-        if not is_staff and (self.tester_role and self.tester_role not in interaction.user.roles):
-            return await interaction.response.send_message("❌ Csak teszterek vagy adminok hívhatják a következő játékost!", ephemeral=True)
+        if not _can_give_tiers(interaction.user):
+            return await interaction.response.send_message("❌ Csak a jogosult rang hívhatja a következő játékost!", ephemeral=True)
 
         ch_id = interaction.channel.id
         if ch_id not in ACTIVE_QUEUES:
