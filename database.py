@@ -313,6 +313,34 @@ async def save_test_result_supabase(player_user: discord.Member, player_mc: str,
         raise e
 
 
+async def get_active_bans_async() -> list[dict]:
+    """
+    Visszaadja a Supabase `bans` táblájából az összes aktív (active=true)
+    kitiltást. A weboldali admin panel innen tilt ki játékosokat, a bot
+    ez alapján szinkronizálja a Discord kitiltási rangot.
+    """
+    if not db._client:
+        return []
+    try:
+        resp = await arun(lambda: db._client.table("bans").select("*").eq("active", True).execute())
+        return resp.data or []
+    except Exception as exc:
+        log.error("Hiba az aktív bannok lekérdezésekor a Supabase-ből: %s", exc)
+        return []
+
+
+async def deactivate_ban_async(ban_id: int) -> bool:
+    """Lejárt kitiltás inaktívvá jelölése a Supabase `bans` táblájában."""
+    if not db._client:
+        return False
+    try:
+        await arun(lambda: db._client.table("bans").update({"active": False}).eq("id", ban_id).execute())
+        return True
+    except Exception as exc:
+        log.error("Hiba a(z) %s ID-jű ban inaktiválásakor: %s", ban_id, exc)
+        return False
+
+
 async def get_player_rank_async(player_mc: str, gamemode_display: str) -> str:
     """Visszaadja a játékos jelenlegi tierjét egy adott játékmódban (Unranked, ha nincs rekord)."""
     try:
