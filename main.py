@@ -34,6 +34,7 @@ INITIAL_EXTENSIONS = [
     "commands.weekly_report",
     "commands.regulator_panel",
     "commands.send_message",
+    "commands.idea_channel",
 ]
 
 # Discord Bot Intents beállítása
@@ -64,6 +65,7 @@ def register_persistent_views() -> None:
     from commands.tier_ui import PanelSelectView
     from commands.tgf import TGFPanelView
     from commands.regulator_panel import RegulatorPanelView
+    from commands.idea_channel import IdeaVoteView
 
     for mode_type in ("Modern", "Legacy"):
         for action_type in ("ping", "queue", "hightest"):
@@ -71,9 +73,10 @@ def register_persistent_views() -> None:
 
     bot.add_view(TGFPanelView())
     bot.add_view(RegulatorPanelView())
+    bot.add_view(IdeaVoteView())
 
     _persistent_views_registered = True
-    log.info("Perzisztens panel View-k regisztrálva (ping/queue/hightest/tgf/regulator).")
+    log.info("Perzisztens panel View-k regisztrálva (ping/queue/hightest/tgf/regulator/otlet).")
 
 
 @bot.event
