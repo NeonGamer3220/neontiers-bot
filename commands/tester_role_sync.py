@@ -111,9 +111,13 @@ class TesterRoleSyncCog(commands.Cog):
                         except Exception as exc:
                             log.error("Hiba a Tester rang levételekor %s tagról: %s", member, exc)
 
-            # --- Játékmódonkénti "{label} Tester" rangok kiosztása / levétele ---
+            # --- Játékmódonkénti "{label} Tester" / "{label} Teszter" rangok kiosztása / levétele ---
             for label in _ALL_GAMEMODE_LABELS:
-                gm_role = discord.utils.get(guild.roles, name=f"{label} Tester")
+                gm_role = None
+                for suffix in ("Tester", "Teszter"):
+                    gm_role = discord.utils.get(guild.roles, name=f"{label} {suffix}")
+                    if gm_role:
+                        break
                 if not gm_role:
                     continue
 

@@ -17,6 +17,16 @@ from commands.ban_enforcement import is_banned_by_role
 from database import get_linked_minecraft_name_async, save_test_result_supabase, get_player_rank_async
 
 
+def _find_gamemode_tester_role(guild: discord.Guild, gamemode_label: str):
+    """Megkeresi a játékmód-specifikus Tester rangot a szerveren, mind a
+    "{label} Tester", mind a "{label} Teszter" (magyar) elnevezéssel."""
+    for suffix in ("Tester", "Teszter"):
+        role = discord.utils.get(guild.roles, name=f"{gamemode_label} {suffix}")
+        if role:
+            return role
+    return None
+
+
 def _can_give_tiers(member: discord.Member) -> bool:
     """Csak a TIER_GIVER_ROLE_ID rang (vagy admin) hívhatja a 'Következő' gombot
     és adhat/rögzíthet tiert."""
@@ -49,8 +59,8 @@ def _can_open_queue(member: discord.Member, guild: discord.Guild, gamemode_label
     if not general_tester_role or general_tester_role not in member.roles:
         return False, "❌ Nincs jogosultságod várólistát nyitni: szükséged van a **Tester** rangra."
 
-    gamemode_role = discord.utils.get(guild.roles, name=f"{gamemode_label} Tester")
-    if gamemode_role and gamemode_role not in member.roles:
+    gamemode_role = _find_gamemode_tester_role(guild, gamemode_label)
+    if not gamemode_role or gamemode_role not in member.roles:
         return False, f"❌ Nincs jogosultságod ehhez a játékmódhoz: hiányzik a **{gamemode_label} Tester** rangod."
 
     return True, None
@@ -602,8 +612,7 @@ class PanelSelect(discord.ui.Select):
 
             category = get_ticket_category(guild, is_legacy)
 
-            tester_role_name = f"{label} Tester"
-            tester_role = discord.utils.get(guild.roles, name=tester_role_name)
+            tester_role = _find_gamemode_tester_role(guild, label)
             regulator_role = guild.get_role(REGULATOR_ROLE_ID)
 
             overwrites = {
@@ -656,8 +665,7 @@ class PanelSelect(discord.ui.Select):
         await interaction.response.defer(ephemeral=True)
         category = get_queue_category(guild, is_legacy)
         
-        tester_role_name = f"{label} Tester"
-        tester_role = discord.utils.get(guild.roles, name=tester_role_name)
+        tester_role = _find_gamemode_tester_role(guild, label)
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=True, send_messages=False, read_message_history=True),
