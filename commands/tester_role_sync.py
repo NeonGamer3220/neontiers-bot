@@ -21,6 +21,7 @@ történik (ugyanaz a minta, mint a ban_enforcement.py-ban).
 import logging
 
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
 
 from config import TESTER_ROLE_ID, ALL_TICKET_TYPES, config
@@ -45,7 +46,7 @@ class TesterRoleSyncCog(commands.Cog):
     def cog_unload(self):
         self.sync_testers.cancel()
 
-    @tasks.loop(minutes=2)
+    @tasks.loop(seconds=30)
     async def sync_testers(self):
         guilds = [g for g in self.bot.guilds if not config.guild_id or g.id == config.guild_id]
         if not guilds:
@@ -155,6 +156,18 @@ class TesterRoleSyncCog(commands.Cog):
     @sync_testers.before_loop
     async def before_sync(self):
         await self.bot.wait_until_ready()
+
+    @app_commands.command(name="synctesters", description="Azonnal újraszinkronizálja a Tester rangokat (Admin).")
+    async def synctesters(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ Ehhez a parancshoz admin jogosultság szükséges.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await self.sync_testers()
+        except Exception as exc:
+            log.error("Hiba a manuális Tester szinkronizáláskor: %s", exc)
+            return await interaction.followup.send(f"❌ Hiba történt a szinkronizálás közben: {exc}", ephemeral=True)
+        await interaction.followup.send("✅ Tester rangok szinkronizálva.", ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:
