@@ -28,6 +28,7 @@ INITIAL_EXTENSIONS = [
     "commands.tier_system",
     "commands.staff",
     "commands.ban_enforcement",
+    "commands.tester_role_sync",
     "commands.spin",
     "commands.support_ticket",
     "commands.notifications",

@@ -329,6 +329,27 @@ async def get_active_bans_async() -> list[dict]:
         return []
 
 
+async def get_tester_usernames_async() -> list[str]:
+    """
+    Visszaadja azoknak a játékosneveknek a listáját, akiknek a Supabase
+    `tests` táblájában legalább egy sorában `is_tester = true`. A weboldali
+    admin panel (Owner) ezt a jelölőnégyzetet Játékmódonként állítja; ha egy
+    játékosnak BÁRMELYIK módban be van pipálva, Tester Discord rangot kap.
+    """
+    if not db._client:
+        return []
+    try:
+        resp = await arun(
+            lambda: db._client.table("tests").select("username").eq("is_tester", True).execute()
+        )
+        rows = resp.data or []
+        usernames = {str(r.get("username", "")).strip() for r in rows if r.get("username")}
+        return [u for u in usernames if u]
+    except Exception as exc:
+        log.error("Hiba a Tester játékosok lekérdezésekor a Supabase-ből: %s", exc)
+        return []
+
+
 async def deactivate_ban_async(ban_id: int) -> bool:
     """Lejárt kitiltás inaktívvá jelölése a Supabase `bans` táblájában."""
     if not db._client:
