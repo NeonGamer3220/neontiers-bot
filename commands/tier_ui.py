@@ -6,7 +6,7 @@ High Test javaslat beküldő modal (nem zárja be azonnal a csatornát) és tier
 import discord
 import asyncio
 import time
-from config import TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES, get_gamemode_display_name, STAFF_ROLE_ID, REGULATOR_ROLE_ID, RANKS, MODERN_RESULT_CHANNEL_ID, LEGACY_RESULT_CHANNEL_ID, LOG_CHANNEL_ID, TIER_GIVER_ROLE_ID
+from config import TICKET_TYPES, LEGACY_TICKET_TYPES, ALL_TICKET_TYPES, get_gamemode_display_name, STAFF_ROLE_ID, REGULATOR_ROLE_ID, RANKS, MODERN_RESULT_CHANNEL_ID, LEGACY_RESULT_CHANNEL_ID, LOG_CHANNEL_ID, TIER_GIVER_ROLE_ID, TESTER_ROLE_ID
 from commands.tier_utils import (
     ACTIVE_QUEUES, INACTIVE_TICKETS, VALID_HT_TIERS, ALLOWED_QUEUE_TIERS,
     get_ticket_category, get_queue_category, update_queue_message, 
@@ -23,6 +23,37 @@ def _can_give_tiers(member: discord.Member) -> bool:
     if member.guild_permissions.administrator:
         return True
     return any(r.id == TIER_GIVER_ROLE_ID for r in member.roles)
+
+
+def _can_open_queue(member: discord.Member, guild: discord.Guild, gamemode_label: str):
+    """Eldönti, hogy a tag megnyithatja-e egy adott játékmód várólistáját.
+
+    - Admin / Staff / Regulátor mindig megnyithatja.
+    - Egyébként a tagnak rendelkeznie kell az általános TESTER_ROLE_ID
+      ("Tester") ranggal, ÉS - ha az adott játékmódhoz létezik ilyen nevű
+      rang a szerveren - a "{gamemode_label} Tester" (pl. "DiaSMP Tester")
+      játékmód-specifikus ranggal is. Ha valakinek csak az általános Tester
+      rangja van meg, de a konkrét játékmódhoz tartozó nincs, nem nyithat
+      várólistát abban a módban.
+
+    Visszatérési érték: (engedélyezve: bool, hibaüzenet: str | None)
+    """
+    if member.guild_permissions.administrator:
+        return True, None
+
+    role_ids = {r.id for r in member.roles}
+    if role_ids & {STAFF_ROLE_ID, REGULATOR_ROLE_ID}:
+        return True, None
+
+    general_tester_role = guild.get_role(TESTER_ROLE_ID)
+    if not general_tester_role or general_tester_role not in member.roles:
+        return False, "❌ Nincs jogosultságod várólistát nyitni: szükséged van a **Tester** rangra."
+
+    gamemode_role = discord.utils.get(guild.roles, name=f"{gamemode_label} Tester")
+    if gamemode_role and gamemode_role not in member.roles:
+        return False, f"❌ Nincs jogosultságod ehhez a játékmódhoz: hiányzik a **{gamemode_label} Tester** rangod."
+
+    return True, None
 
 
 class HighTestNoteModal(discord.ui.Modal, title="Megjegyzés Beküldése"):
@@ -617,6 +648,11 @@ class PanelSelect(discord.ui.Select):
 
         # 3. QUEUE PANEL (Várólista)
         label = get_gamemode_display_name(key)
+
+        can_open, deny_reason = _can_open_queue(user, guild, label)
+        if not can_open:
+            return await interaction.response.send_message(deny_reason, ephemeral=True)
+
         await interaction.response.defer(ephemeral=True)
         category = get_queue_category(guild, is_legacy)
         

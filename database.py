@@ -350,6 +350,34 @@ async def get_tester_usernames_async() -> list[str]:
         return []
 
 
+async def get_tester_gamemode_rows_async() -> list[dict]:
+    """
+    Visszaadja a Supabase `tests` táblából azokat a (username, gamemode)
+    párokat, ahol `is_tester = true`. Ez a játékmódonkénti Tester Discord
+    rangok (pl. "DiaSMP Tester") szinkronizálásához kell, a globális
+    TESTER_ROLE_ID rang mellett - egy játékosnak csak azokhoz a
+    játékmódokhoz tartozó Tester rangja legyen, amelyekhez a weboldalon
+    (Owner admin) be van pipálva.
+    """
+    if not db._client:
+        return []
+    try:
+        resp = await arun(
+            lambda: db._client.table("tests").select("username,gamemode").eq("is_tester", True).execute()
+        )
+        rows = resp.data or []
+        result = []
+        for r in rows:
+            username = str(r.get("username", "")).strip()
+            gamemode = str(r.get("gamemode", "")).strip()
+            if username and gamemode:
+                result.append({"username": username, "gamemode": gamemode})
+        return result
+    except Exception as exc:
+        log.error("Hiba a játékmódonkénti Tester sorok lekérdezésekor a Supabase-ből: %s", exc)
+        return []
+
+
 async def deactivate_ban_async(ban_id: int) -> bool:
     """Lejárt kitiltás inaktívvá jelölése a Supabase `bans` táblájában."""
     if not db._client:
